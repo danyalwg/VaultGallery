@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Vault Gallery</string>
+    <string name="gallery_label">Gallery</string>
+    <string name="secure_gallery_label">Secure Gallery</string>
+</resources>

@@ -1,36 +1,28 @@
 # Secure File Format
 
-Status: design for Phase 3 implementation and interoperability tests. Version 1 uses independently authenticated chunks so large video can seek without plaintext files.
+Status: version 1 is implemented. It uses independently authenticated chunks so secure video can seek without a plaintext video file.
 
 ## Binary layout
 
-All integers are unsigned big-endian. The fixed preamble contains:
+All integers are big-endian. The implemented preamble contains:
 
 | Field | Size | Decision |
 |---|---:|---|
 | Magic | 8 bytes | ASCII `VLTGAL01` |
-| Format version | 2 | `1` |
-| Header length | 2 | Bounds checked before allocation |
-| Flags | 4 | Media class and optional sections; unknown critical flags reject |
-| File object ID | 16 | Random UUID bytes, not a filename |
-| Chunk size | 4 | Default 1 MiB; validated range 64 KiB–4 MiB |
-| Plaintext length | 8 | Encrypted metadata is authoritative; used for bounds only |
-| Chunk count | 4 | Must equal ceiling(length/chunk size) |
-| Nonce prefix | 8 | Cryptographically random per file/key |
-| Key reference length + value | variable | Identifier for an encrypted DEK envelope, never raw key bytes |
-| Metadata envelope length + value | variable | AES-256-GCM ciphertext and tag |
-| Header authenticator | 16 | Authenticates every preceding header byte |
+| Format version | 4 bytes | `1` |
+| Chunk size | 4 bytes | 1 MiB; reader validates 64 KiB to 4 MiB |
+| Nonce prefix | 8 bytes | Cryptographically random per file/key |
 
-Each data record contains `chunkIndex` (4), `plaintextLength` (4), ciphertext, and a 16-byte GCM tag. Nonce is the 8-byte random prefix concatenated with the 32-bit chunk index. A fresh random 256-bit DEK and prefix are generated for every object, so nonce reuse with a key is structurally prevented. Header bytes and chunk index/length are additional authenticated data.
+Each data record contains `plaintextLength` (4 bytes), ciphertext, and a 16-byte GCM tag. Record order defines the zero-based chunk index. The nonce is the random 8-byte prefix concatenated with that 32-bit index. The per-object AES-256 key is derived from the random vault master key and random UUID object ID using HMAC-SHA-256 domain separation. Chunk index, length, and magic are authenticated as additional data.
 
 ## Metadata and keys
 
-Metadata is canonical CBOR with a schema version and encrypted under a metadata subkey derived from the file DEK using HKDF-SHA-256 with domain separation. The file DEK is wrapped by a vault wrapping key; the key reference selects its authenticated envelope. Filenames and logical paths never appear in the physical filename or clear header.
+Metadata resides in a separate AES-256-GCM encrypted JSON index. Physical filenames contain only random UUID object IDs. Names and MIME types never appear in the media header or physical filename.
 
 ## Reading and seeking
 
-Readers validate magic/version/length limits, authenticate the header, unwrap the DEK, and verify each requested chunk before releasing bytes. Fixed chunk sizing gives direct offsets; the final chunk uses its declared length. A bounded in-memory cache contains only authenticated plaintext chunks and is cleared on stop/lock/memory pressure.
+Readers validate magic, version, and length limits and verify each requested chunk before releasing bytes. The Media3 data source scans record boundaries once, then seeks directly to the required authenticated chunk. It holds one decrypted chunk and clears it on close.
 
 ## Failure and migration
 
-Any tag, index, length, or ordering failure marks the object `IntegrityFailed`; no partial plaintext is shown as valid media. Unsupported newer versions are preserved and reported, never rewritten. Migration writes a new temporary object, verifies all chunks and metadata, atomically commits the database pointer, then retires the old object. Test vectors cover empty, one-chunk, multi-chunk, large-index, truncation, bit flips, reordered chunks, wrong keys, and unknown flags.
+Authentication, truncation, or bounds failures stop the read; no unauthenticated plaintext is accepted. Unsupported versions are preserved and reported. A future migration must write a temporary object, verify it, commit the encrypted index, and only then retire the old object.

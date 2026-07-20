@@ -2,11 +2,11 @@
 
 ## Decision summary
 
-Vault Gallery will be a Kotlin, Jetpack Compose Android application with two launcher activities and strictly separated public and secure data paths. The build targets API 35, supports API 28+, uses Java 17 bytecode, and is developed with the Android Studio bundled runtime. Phase 0 contains only the build scaffold and planning material.
+Vault Gallery is a Kotlin, Jetpack Compose Android application with two launcher activities and separated public and secure data paths. The build targets API 35, supports API 28+, and uses Java 17 bytecode.
 
 ## Module boundaries
 
-The planned modules are `app`, `core-common`, `core-design`, `core-database`, `core-storage`, `core-media`, `core-playback`, `core-image`, `core-video`, `core-security`, `core-search`, `core-background`, the feature modules named in the master brief, `benchmark`, and `screenshot-tests`.
+The delivered APK currently uses one Gradle `app` module with package boundaries for UI, public data, shared logic, and security. This is a recorded compromise for the installable milestone. Splitting these packages into the planned Gradle modules remains required before a large-team production release.
 
 Every feature uses presentation, domain, and data packages. Composables render immutable UI state and emit events. ViewModels invoke domain use cases. Repositories own storage and service coordination. File I/O, MediaStore queries, database work, media decoding, and cryptography never run in composables or on the main thread.
 
@@ -14,9 +14,9 @@ Every feature uses presentation, domain, and data packages. Composables render i
 
 - `MainGalleryActivity` hosts public navigation and never requires authentication.
 - `SecureGalleryActivity` has a separate task identity. Its root state machine permits only `Locked`, `Authenticating`, or `Unlocked`; secure destinations cannot be restored while locked.
-- Hilt supplies repositories and process-scoped coordinators. Public and secure bindings use distinct interfaces and qualifiers only where shared low-level primitives are safe.
-- Navigation Compose owns screen routing. Secure routes are in a separate graph constructed only after authentication.
-- Room databases, cache roots, WorkManager queues, thumbnails, and search indexes are physically separate for public and secure features.
+- Android ViewModels own public and secure state independently. Public MediaStore access and secure encrypted storage have separate implementations.
+- Compose state routes between screens. Secure content branches render only while the in-memory master key is available.
+- Secure media, encrypted metadata, and temporary shares use app-private roots and never enter MediaStore.
 
 ## Dependency direction
 
@@ -24,7 +24,7 @@ Feature presentation depends on feature domain contracts and shared design/commo
 
 ## Concurrency and recovery
 
-Coroutines and Flow expose observable state. Paging 3 backs large public collections. Long operations are resumable WorkManager jobs with persistent manifests and idempotent state transitions. Cancellation occurs at verified item or chunk boundaries. Process death recovery replays journals rather than guessing from filenames.
+Coroutines and StateFlow expose observable state. Public loading and secure imports run off the main thread. Durable WorkManager import manifests, pause/resume, and crash recovery remain planned and are listed as limitations.
 
 ## Adaptive UI
 

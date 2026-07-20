@@ -1,22 +1,22 @@
 # Known Limitations
 
-## Phase 0 status
+This APK is an installable functional milestone, not the complete production scope described by the master brief.
 
-This repository currently contains a build scaffold and planning documents only. It has no gallery UI, launchable activity, media indexing, editor, authentication, encryption, import/export, search, trash, cloud, or user data handling. Phase 0 must not be evaluated as a working gallery.
+## Implemented
 
-## Product security boundary
+- Two launcher activities labelled Gallery and Secure Gallery.
+- Public MediaStore permission flow, timeline, four-column thumbnails, date groups, albums, search, long-press selection, sharing, Android 11+ approved deletion, image zoom, and Media3 video playback.
+- Albums, Stories empty state, Menu, persisted settings, dark Compose layout, accessibility labels, and visible DEBUG marking.
+- Secure PIN/passphrase setup, Argon2id, increasing persisted unlock delays, Android Keystore device wrapping, random master key, per-object derived keys, AES-256-GCM chunks, encrypted metadata index, Photo Picker imports, encrypted image viewing, seekable encrypted Media3 video playback, explicit decrypted sharing, permanent delete/reset confirmation, screenshot protection, disabled backup, and lock on pause/process restart.
 
-- Secure Gallery is app-level encrypted storage, not an operating-system secure container.
-- Rooted devices, compromised firmware/OS, privileged memory inspection, malicious accessibility services, and physical cameras are outside the reliable protection boundary.
-- `FLAG_SECURE` and recents controls depend on Android/OEM behavior.
-- Flash wear leveling means deletion cannot promise forensic overwrite; cryptographic key destruction is the primary protection.
-- Forgotten credentials are unrecoverable unless the user previously saved an optional recovery key.
-- A recipient can retain plaintext intentionally exported or shared by the user.
+## Not yet implemented
 
-## Platform/media limits
+- Biometrics, recovery key, change-passphrase, configurable lock delay, launcher hiding, secure recycle bin, encrypted thumbnails, durable WorkManager import queues, pause/resume, folder-tree hierarchy imports, duplicate policy, transactional source deletion after secure copy, and encrypted backup.
+- Public trash browser, favourite mutation, location map/editing, shared albums, clean-out analysis, generated stories, OCR, labels, people grouping, cloud sync, advanced search, creative tools, photo/video editing, slideshow/GIF/movie creation, and benchmarks.
+- Full Gradle module split, Room/Hilt, complete screenshot/device matrix, tablet navigation rail, and the full security test matrix.
 
-Codec, HDR, RAW, biometric, removable-storage, PiP, write/delete, and partial-access behavior varies by API/device/provider. Unsupported features will be hidden or explained, never claimed. Public operations remain subject to Android user approvals. Large/corrupt/non-seekable media may be rejected safely.
+## Security boundary
 
-## Deferred decisions
+Secure Gallery is application-level encrypted storage, not an operating-system container. Rooted or compromised devices, privileged memory inspection, malicious accessibility services, OS/vendor capture defects, and physical cameras are outside its reliable boundary. Shared plaintext can be retained by recipients. Flash wear leveling prevents guaranteed forensic overwrite.
 
-The exact OFL font, screenshot library, Argon2id provider/parameters, encrypted Room integration, editing codec matrix, OCR/label engines, cloud provider, and encrypted-backup transport require implementation-phase evaluation and testing. No cloud or Studio row will appear before real functionality exists.
+The APK is debug-signed and visibly marked DEBUG. It is suitable for evaluation and personal testing, not store publication or irreplaceable private media until the remaining recovery, migration, and device-matrix work is complete.

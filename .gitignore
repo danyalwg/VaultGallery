@@ -5,3 +5,4 @@
 *.iml
 /.kotlin/
 /design-reference/reference-images/
+/artifacts/*.apk
