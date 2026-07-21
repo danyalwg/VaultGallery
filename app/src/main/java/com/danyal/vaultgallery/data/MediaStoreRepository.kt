@@ -112,8 +112,21 @@ class MediaStoreRepository(private val context: Context) {
         return result
     }
 
-    fun albums(media: List<GalleryMedia>): List<GalleryAlbum> = media
-        .groupBy { it.bucketId to it.bucketName }
-        .mapNotNull { (key, items) -> items.firstOrNull()?.let { GalleryAlbum(key.first, key.second, it, items.size) } }
-        .sortedWith(compareByDescending<GalleryAlbum> { it.count }.thenBy { it.name.lowercase() })
+    fun albums(media: List<GalleryMedia>, mergeMatchingNames: Boolean = false): List<GalleryAlbum> {
+        val physical = media
+            .groupBy { it.bucketId to it.bucketName }
+            .mapNotNull { (key, items) ->
+                items.firstOrNull()?.let { GalleryAlbum(key.first, key.second, it, items.size) }
+            }
+        val albums = if (!mergeMatchingNames) physical else physical
+            .groupBy { it.name.trim().lowercase() }
+            .mapNotNull { (_, sources) ->
+                val cover = sources.maxByOrNull { it.cover.dateTakenMs } ?: return@mapNotNull null
+                cover.copy(
+                    count = sources.sumOf { it.count },
+                    bucketIds = sources.flatMapTo(LinkedHashSet()) { it.bucketIds },
+                )
+            }
+        return albums.sortedWith(compareByDescending<GalleryAlbum> { it.count }.thenBy { it.name.lowercase() })
+    }
 }

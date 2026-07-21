@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.USE_FINGERPRINT" android:maxSdkVersion="28" />
 
     <application
+        android:name=".VaultGalleryApplication"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -21,7 +22,20 @@
             android:exported="true"
             android:label="@string/secure_gallery_label"
             android:icon="@drawable/ic_secure_gallery"
-            android:taskAffinity="com.danyal.vaultgallery.secure" />
+            android:taskAffinity="com.danyal.vaultgallery.secure">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
+        </activity>
 
         <activity-alias
             android:name=".SecureGalleryLauncher"

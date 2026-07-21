@@ -1,3 +1,25 @@
+# Vault Gallery 2.1 Pixel Audit Debug
+
+Version 2.1 is a physical-device repair and interaction audit for Pixel, with a Samsung-style workflow used as the behavioral reference.
+
+## Fixed and completed in 2.1
+
+- Reliable video thumbnails through Android `loadThumbnail`, with Coil video-frame fallback for codec/provider edge cases.
+- A custom inline video player with autoplay, scrubbing, elapsed/total time, replay, mute, rotation, casting settings, and an explicit external-player action.
+- The same custom playback experience for encrypted Secure Gallery videos, using an app-private temporary playback copy that is deleted when the viewer closes and purged on startup.
+- Six-to-twelve digit Secure Gallery PIN setup, confirmation validation, credential changes, strong-biometric unlock, launcher visibility, and configurable auto-lock settings.
+- Secure image and video imports through the Storage Access Framework on Android 9–15, plus direct Android share-target support.
+- Transactional Move to Secure Gallery: encrypted import completes first; Android requests recycle-bin approval for originals only after every item succeeds.
+- One-time dismissible Albums education, real whole-album long-press selection, persistent Essential Album membership, actual album-name merging, and working album Copy/Move/Share/Secure actions.
+- Album creation by selecting media and a real destination folder, plus searchable All Albums.
+- A working 3/4/5-column Pictures layout control and press-drag range selection with edge scrolling.
+- Working tags in search, home-screen collection shortcuts, external editor/wallpaper fallbacks, automatic-story control, and removal of reachable placeholder-only actions.
+- Pixel 8 Pro installation and runtime audit, Android 11 encrypted-video import/playback validation, and connected instrumentation coverage.
+
+The APK is debug-signed. Back up irreplaceable media and read `KNOWN_LIMITATIONS.md` before relying on it as the only copy.
+
+---
+
 # Vault Gallery 2.0 Samsung-style Debug
 
 Version 2.0 is rebuilt from a direct, read-only audit of Samsung Gallery 15.6.06.0 on One UI 7.

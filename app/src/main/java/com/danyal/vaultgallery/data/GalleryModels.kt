@@ -26,4 +26,5 @@ data class GalleryAlbum(
     val name: String,
     val cover: GalleryMedia,
     val count: Int,
+    val bucketIds: Set<Long> = setOf(bucketId),
 )

@@ -1,6 +1,8 @@
 package com.danyal.vaultgallery
 
 import android.app.Application
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -27,6 +29,8 @@ data class SecureGalleryState(
     val trashItems: List<SecureItem> = emptyList(),
     val biometricEnabled: Boolean = false,
     val lockTimeoutMs: Long = 0L,
+    val pendingImports: Int = 0,
+    val lastImportSucceeded: Boolean = false,
     val error: String? = null,
 )
 
@@ -49,6 +53,7 @@ class SecureGalleryViewModel(application: Application) : AndroidViewModel(applic
     fun queueImport(uris: List<Uri>) {
         if (uris.isEmpty()) return
         pendingUris.addAll(uris.filterNot { it in pendingUris })
+        _state.value = _state.value.copy(pendingImports = pendingUris.size, lastImportSucceeded = false)
         if (_state.value.unlocked) importPending()
     }
 
@@ -61,6 +66,7 @@ class SecureGalleryViewModel(application: Application) : AndroidViewModel(applic
             _state.value = _state.value.copy(error = "Use at least six characters")
             return
         }
+        _state.value = _state.value.copy(busy = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { vault.setup(secret.toCharArray()) }
                 .onSuccess { key ->
@@ -69,7 +75,7 @@ class SecureGalleryViewModel(application: Application) : AndroidViewModel(applic
                     publishUnlocked(key)
                     importPending()
                 }
-                .onFailure { _state.value = _state.value.copy(error = it.message ?: "Secure Gallery setup failed") }
+                .onFailure { _state.value = _state.value.copy(busy = false, error = it.message ?: "Secure Gallery setup failed") }
         }
     }
 
@@ -199,8 +205,8 @@ class SecureGalleryViewModel(application: Application) : AndroidViewModel(applic
         val key = master ?: return
         if (pendingUris.isEmpty() || _state.value.busy) return
         val imports = ArrayList(pendingUris).also { pendingUris.clear() }
+        _state.value = _state.value.copy(busy = true, progress = "Preparing secure import", pendingImports = imports.size, lastImportSucceeded = false, error = null)
         viewModelScope.launch(Dispatchers.IO) {
-            _state.value = _state.value.copy(busy = true, error = null)
             val failures = ArrayList<String>()
             imports.forEachIndexed { index, uri ->
                 _state.value = _state.value.copy(progress = "Encrypting ${index + 1} of ${imports.size}")
@@ -212,11 +218,17 @@ class SecureGalleryViewModel(application: Application) : AndroidViewModel(applic
             _state.value = _state.value.copy(
                 busy = false,
                 progress = null,
+                pendingImports = 0,
+                lastImportSucceeded = failures.isEmpty(),
                 items = latest,
                 trashItems = trash,
                 error = failures.takeIf { it.isNotEmpty() }?.joinToString("; "),
             )
         }
+    }
+
+    fun consumeImportResult() {
+        _state.value = _state.value.copy(lastImportSucceeded = false)
     }
 
     fun delete(item: SecureItem) {
@@ -264,9 +276,30 @@ class SecureGalleryViewModel(application: Application) : AndroidViewModel(applic
         runCatching { vault.decryptBytes(key, item) }.getOrNull()
     }
 
+    suspend fun previewVideoThumbnail(item: SecureItem): Bitmap? = withContext(Dispatchers.IO) {
+        val key = master ?: return@withContext null
+        val temporary = runCatching { vault.createShareFile(key, item) }.getOrNull() ?: return@withContext null
+        try {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(temporary.absolutePath)
+                retriever.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            } finally {
+                retriever.release()
+            }
+        } finally {
+            temporary.delete()
+        }
+    }
+
     fun dataSource(item: SecureItem): DataSource.Factory? = master?.let { vault.dataSourceFactory(it, item) }
 
     suspend fun shareFile(item: SecureItem): File? = withContext(Dispatchers.IO) {
+        val key = master ?: return@withContext null
+        runCatching { vault.createShareFile(key, item) }.getOrNull()
+    }
+
+    suspend fun playbackFile(item: SecureItem): File? = withContext(Dispatchers.IO) {
         val key = master ?: return@withContext null
         runCatching { vault.createShareFile(key, item) }.getOrNull()
     }

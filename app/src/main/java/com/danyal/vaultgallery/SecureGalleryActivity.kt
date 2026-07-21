@@ -10,6 +10,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.SystemBarStyle
@@ -17,7 +18,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.biometric.BiometricManager
@@ -48,6 +49,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Image
@@ -56,6 +59,7 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Movie
+import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Settings
@@ -71,6 +75,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -81,6 +86,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -103,10 +109,12 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.PlayerView
 import com.danyal.vaultgallery.security.SecureItem
+import com.danyal.vaultgallery.core.GalleryLogic
 import com.danyal.vaultgallery.ui.VaultBackground
 import com.danyal.vaultgallery.ui.VaultPrimary
 import com.danyal.vaultgallery.ui.VaultRaised
@@ -115,11 +123,18 @@ import com.danyal.vaultgallery.ui.VaultSecure
 import com.danyal.vaultgallery.ui.VaultSurface
 import com.danyal.vaultgallery.ui.VaultTheme
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 class SecureGalleryActivity : FragmentActivity() {
     private val secureViewModel by viewModels<SecureGalleryViewModel>()
     private var biometricInProgress = false
     private var biometricEnrollment = false
+    private var pendingMoveUris = ArrayList<Uri>()
+    private var moveApprovalLaunched = false
+    private val moveApprovalLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
+        pendingMoveUris.clear()
+        moveApprovalLaunched = false
+    }
 
     private val biometricPrompt by lazy {
         BiometricPrompt(
@@ -153,12 +168,27 @@ class SecureGalleryActivity : FragmentActivity() {
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
-        val incoming = if (Build.VERSION.SDK_INT >= 33) {
+        val explicitIncoming = if (Build.VERSION.SDK_INT >= 33) {
             intent.getParcelableArrayListExtra("import_uris", Uri::class.java).orEmpty()
         } else {
             @Suppress("DEPRECATION") intent.getParcelableArrayListExtra<Uri>("import_uris").orEmpty()
         }
-        secureViewModel.queueImport(incoming)
+        val sharedIncoming = when (intent.action) {
+            Intent.ACTION_SEND -> listOfNotNull(
+                if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                else @Suppress("DEPRECATION") intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM),
+                intent.getStringExtra(Intent.EXTRA_STREAM)?.let(Uri::parse),
+            )
+            Intent.ACTION_SEND_MULTIPLE -> if (Build.VERSION.SDK_INT >= 33) intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty() else @Suppress("DEPRECATION") intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
+            else -> emptyList()
+        }
+        val clippedIncoming = buildList {
+            val clip = intent.clipData ?: return@buildList
+            repeat(clip.itemCount) { index -> clip.getItemAt(index).uri?.let(::add) }
+        }
+        val allIncoming = (explicitIncoming + sharedIncoming + clippedIncoming).distinct()
+        if (intent.getBooleanExtra("move_after_import", false)) pendingMoveUris = ArrayList(allIncoming)
+        secureViewModel.queueImport(allIncoming)
         setContent {
             VaultTheme {
                 Box(Modifier.fillMaxSize()) {
@@ -168,6 +198,8 @@ class SecureGalleryActivity : FragmentActivity() {
                         biometricsAvailable = biometricsAvailable(),
                         onBiometricUnlock = { showBiometricPrompt(enrollment = false) },
                         onBiometricEnrollment = { showBiometricPrompt(enrollment = true) },
+                        moveSourceCount = pendingMoveUris.size,
+                        onMoveImportReady = ::requestSourceMove,
                     )
                 }
             }
@@ -221,6 +253,24 @@ class SecureGalleryActivity : FragmentActivity() {
         }
         startActivity(Intent.createChooser(intent, "Share decrypted copy"))
     }
+
+    private fun requestSourceMove() {
+        secureViewModel.consumeImportResult()
+        if (pendingMoveUris.isEmpty() || moveApprovalLaunched) return
+        if (Build.VERSION.SDK_INT < 30) {
+            secureViewModel.reportError("Moving originals requires Android 11 or later. The encrypted copies are safe.")
+            pendingMoveUris.clear()
+            return
+        }
+        runCatching {
+            moveApprovalLaunched = true
+            val pending = MediaStore.createTrashRequest(contentResolver, pendingMoveUris, true)
+            moveApprovalLauncher.launch(IntentSenderRequest.Builder(pending.intentSender).build())
+        }.onFailure {
+            moveApprovalLaunched = false
+            secureViewModel.reportError("Encrypted copies are safe, but Android could not request removal of the originals")
+        }
+    }
 }
 
 private enum class SecureTab { PICTURES, ALBUMS, STORIES, MENU }
@@ -232,14 +282,19 @@ private fun SecureGalleryApp(
     biometricsAvailable: Boolean,
     onBiometricUnlock: () -> Unit,
     onBiometricEnrollment: () -> Unit,
+    moveSourceCount: Int,
+    onMoveImportReady: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var tab by remember { mutableStateOf(SecureTab.PICTURES) }
     var viewer by remember { mutableStateOf<SecureItem?>(null) }
     var settings by remember { mutableStateOf(false) }
     var trashOpen by remember { mutableStateOf(false) }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(100)) { uris -> viewModel.import(uris) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> viewModel.import(uris) }
     LaunchedEffect(state.unlocked) { if (!state.unlocked) { viewer = null; settings = false; tab = SecureTab.PICTURES } }
+    LaunchedEffect(state.lastImportSucceeded, state.pendingImports, moveSourceCount) {
+        if (state.lastImportSucceeded && state.pendingImports == 0 && moveSourceCount > 0) onMoveImportReady()
+    }
     BackHandler(state.unlocked && (viewer != null || settings || trashOpen)) {
         when {
             viewer != null -> viewer = null
@@ -273,17 +328,13 @@ private fun SecureGalleryApp(
             when (tab) {
                 SecureTab.PICTURES -> SecurePictures(
                     state,
-                    onImport = {
-                        picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
-                    },
+                    onImport = { picker.launch(arrayOf("image/*", "video/*")) },
                     onOpen = { viewer = it },
                 )
                 SecureTab.ALBUMS -> SecureAlbums(state.items) { tab = SecureTab.PICTURES }
                 SecureTab.STORIES -> SecureStories(state.items) { viewer = it }
                 SecureTab.MENU -> SecureMenu(
-                    onImport = {
-                        picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
-                    },
+                    onImport = { picker.launch(arrayOf("image/*", "video/*")) },
                     onSettings = { settings = true },
                     onTrash = { trashOpen = true },
                     onLock = viewModel::lock,
@@ -331,32 +382,33 @@ private fun SecureAuthScreen(
         Spacer(Modifier.height(10.dp))
         Text(
             if (state.configured) "Enter your PIN or passphrase. Secure content stays encrypted until unlock."
-            else "Choose at least six characters. There is no password reset; losing it makes this vault inaccessible.",
+            else "Choose a PIN with at least six digits. There is no password reset, so keep it somewhere safe.",
             color = VaultSecondary,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(24.dp))
         OutlinedTextField(
-            secret, { secret = it },
-            label = { Text(if (state.configured) "PIN or passphrase" else "New PIN or passphrase") },
+            secret, { value -> secret = if (state.configured) value.take(64) else value.filter(Char::isDigit).take(12) },
+            label = { Text(if (state.configured) "PIN or passphrase" else "New PIN (6–12 digits)") },
             visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            keyboardOptions = KeyboardOptions(keyboardType = if (state.configured) KeyboardType.Password else KeyboardType.NumberPassword),
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
         if (!state.configured) {
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
-                confirmation, { confirmation = it }, label = { Text("Confirm") },
-                visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                confirmation, { value -> confirmation = value.filter(Char::isDigit).take(12) }, label = { Text("Confirm PIN") },
+                visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                 singleLine = true, modifier = Modifier.fillMaxWidth(),
             )
+            if (confirmation.isNotEmpty() && secret != confirmation) Text("PINs do not match", color = MaterialTheme.colorScheme.error, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
         }
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 12.dp)) }
         Spacer(Modifier.height(22.dp))
         Button(
             onClick = { if (state.configured) onUnlock(secret) else onSetup(secret, confirmation) },
-            enabled = !state.busy && secret.length >= 6,
+            enabled = !state.busy && secret.length >= 6 && (state.configured || secret == confirmation),
             modifier = Modifier.fillMaxWidth(),
         ) { if (state.busy) CircularProgressIndicator(Modifier.size(22.dp)) else Text(if (state.configured) "Unlock" else "Create encrypted vault") }
         if (state.configured && state.biometricEnabled && biometricsAvailable) {
@@ -364,7 +416,7 @@ private fun SecureAuthScreen(
             TextButton(onClick = onBiometricUnlock, modifier = Modifier.fillMaxWidth()) { Text("Unlock with fingerprint or face") }
         }
         Spacer(Modifier.height(16.dp))
-        Text("Application-level protection; not an operating-system container.", color = VaultSecondary, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyMedium)
+        Text("After creation, open Menu → Settings to enable biometrics, change the PIN, and choose auto-lock timing.", color = VaultSecondary, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -403,11 +455,14 @@ private fun SecurePictures(state: SecureGalleryState, onImport: () -> Unit, onOp
 
 @Composable
 private fun SecureTile(item: SecureItem, onOpen: (SecureItem) -> Unit) {
+    val viewModel: SecureGalleryViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     Box(Modifier.aspectRatio(1f).clip(RoundedCornerShape(2.dp)).background(VaultSurface).clickable { onOpen(item) }, contentAlignment = Alignment.Center) {
         if (item.isVideo) {
-            Icon(Icons.Outlined.PlayArrow, item.name, Modifier.size(36.dp), tint = VaultSecure)
+            val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, item.id) { value = viewModel.previewVideoThumbnail(item) }
+            if (bitmap != null) androidx.compose.foundation.Image(bitmap!!.asImageBitmap(), item.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            else CircularProgressIndicator(Modifier.size(24.dp), color = VaultSecure)
+            Icon(Icons.Outlined.PlayArrow, "Video", Modifier.size(40.dp).clip(RoundedCornerShape(20.dp)).background(Color(0x99000000)).padding(7.dp), tint = Color.White)
         } else {
-            val viewModel: SecureGalleryViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
             val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, item.id) {
                 value = viewModel.previewBytes(item)?.let { bytes -> try {
                     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -551,16 +606,57 @@ private fun SecureImage(item: SecureItem, viewModel: SecureGalleryViewModel) {
 @Composable
 private fun SecureVideo(item: SecureItem, viewModel: SecureGalleryViewModel) {
     val context = LocalContext.current
-    val factory = remember(item.id) { viewModel.dataSource(item) }
-    if (factory == null) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Vault locked") }; return }
-    val player = remember(item.id) {
+    val playbackFile by produceState<java.io.File?>(initialValue = null, item.id) { value = viewModel.playbackFile(item) }
+    val file = playbackFile
+    if (file == null) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = VaultSecure) }; return }
+    val player = remember(file) {
         ExoPlayer.Builder(context).build().apply {
-            setMediaSource(ProgressiveMediaSource.Factory(factory).createMediaSource(MediaItem.fromUri("secure://${item.id}")))
+            setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
             prepare(); playWhenReady = true
         }
     }
-    DisposableEffect(player) { onDispose { player.release() } }
-    AndroidView(factory = { PlayerView(it).apply { this.player = player } }, modifier = Modifier.fillMaxSize())
+    var currentPosition by remember { mutableLongStateOf(0L) }
+    var duration by remember { mutableLongStateOf(0L) }
+    var playing by remember { mutableStateOf(true) }
+    var muted by remember { mutableStateOf(false) }
+    LaunchedEffect(player) {
+        while (true) {
+            currentPosition = player.currentPosition.coerceAtLeast(0L)
+            duration = player.duration.takeIf { it > 0 } ?: 0L
+            playing = player.isPlaying
+            delay(250)
+        }
+    }
+    DisposableEffect(player, file) { onDispose { player.release(); file.delete() } }
+    Box(Modifier.fillMaxSize()) {
+        AndroidView(factory = { PlayerView(it).apply { this.player = player; useController = false } }, modifier = Modifier.fillMaxSize())
+        Column(
+            Modifier.align(Alignment.BottomCenter).padding(start = 18.dp, end = 18.dp, bottom = 104.dp)
+                .clip(RoundedCornerShape(24.dp)).background(Color(0xB5222226)).padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            Slider(
+                value = currentPosition.coerceIn(0L, duration.coerceAtLeast(1L)).toFloat(),
+                onValueChange = { value -> currentPosition = value.toLong(); player.seekTo(currentPosition) },
+                valueRange = 0f..duration.coerceAtLeast(1L).toFloat(),
+                modifier = Modifier.fillMaxWidth().height(26.dp),
+            )
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = {
+                    if (player.isPlaying) player.pause() else {
+                        if (player.playbackState == Player.STATE_ENDED) player.seekTo(0)
+                        player.play()
+                    }
+                    playing = player.isPlaying
+                }) {
+                    Icon(if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, if (playing) "Pause" else "Play", tint = Color.White)
+                }
+                Text("${GalleryLogic.durationLabel(currentPosition)} / ${GalleryLogic.durationLabel(duration)}", color = Color.White, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+                IconButton(onClick = { muted = !muted; player.volume = if (muted) 0f else 1f }) {
+                    Icon(if (muted) Icons.AutoMirrored.Outlined.VolumeOff else Icons.AutoMirrored.Outlined.VolumeUp, if (muted) "Unmute" else "Mute", tint = Color.White)
+                }
+            }
+        }
+    }
 }
 
 @Composable
