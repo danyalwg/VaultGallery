@@ -1,10 +1,13 @@
 package com.danyal.vaultgallery.data
 
 import android.Manifest
+import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.provider.MediaStore
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
@@ -31,12 +34,17 @@ class MediaStoreRepository(private val context: Context) {
 
     suspend fun loadMedia(includeTrashed: Boolean = false): List<GalleryMedia> = withContext(Dispatchers.IO) {
         if (!hasAnyAccess()) return@withContext emptyList()
-        val collection = MediaStore.Files.getContentUri("external")
+        buildList {
+            addAll(queryCollection(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, MediaKind.IMAGE, includeTrashed))
+            addAll(queryCollection(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, MediaKind.VIDEO, includeTrashed))
+        }.sortedWith(compareByDescending<GalleryMedia> { it.dateTakenMs }.thenByDescending { it.id })
+    }
+
+    private fun queryCollection(collection: Uri, kind: MediaKind, includeTrashed: Boolean): List<GalleryMedia> {
         val projection = buildList {
-            add(MediaStore.Files.FileColumns._ID)
-            add(MediaStore.Files.FileColumns.DISPLAY_NAME)
-            add(MediaStore.Files.FileColumns.MIME_TYPE)
-            add(MediaStore.Files.FileColumns.MEDIA_TYPE)
+            add(MediaStore.MediaColumns._ID)
+            add(MediaStore.MediaColumns.DISPLAY_NAME)
+            add(MediaStore.MediaColumns.MIME_TYPE)
             add(MediaStore.MediaColumns.WIDTH)
             add(MediaStore.MediaColumns.HEIGHT)
             add(MediaStore.Video.VideoColumns.DURATION)
@@ -50,26 +58,26 @@ class MediaStoreRepository(private val context: Context) {
                 add(MediaStore.MediaColumns.IS_TRASHED)
             }
         }.toTypedArray()
-        val mediaSelection = "${MediaStore.Files.FileColumns.MEDIA_TYPE}=? OR ${MediaStore.Files.FileColumns.MEDIA_TYPE}=?"
-        val selection = if (Build.VERSION.SDK_INT >= 30 && !includeTrashed) {
-            "($mediaSelection) AND ${MediaStore.MediaColumns.IS_TRASHED}=0"
-        } else mediaSelection
-        val args = arrayOf(
-            MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(),
-            MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString(),
-        )
+        val selection = if (Build.VERSION.SDK_INT >= 30 && !includeTrashed) "${MediaStore.MediaColumns.IS_TRASHED}=0" else null
+        val sortOrder = "${MediaStore.Images.ImageColumns.DATE_TAKEN} DESC, ${MediaStore.MediaColumns.DATE_ADDED} DESC"
+        val cursorResult = if (Build.VERSION.SDK_INT >= 30 && includeTrashed) {
+            context.contentResolver.query(
+                collection,
+                projection,
+                Bundle().apply {
+                    putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, sortOrder)
+                    putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_INCLUDE)
+                },
+                null,
+            )
+        } else {
+            context.contentResolver.query(collection, projection, selection, null, sortOrder)
+        }
         val result = ArrayList<GalleryMedia>()
-        context.contentResolver.query(
-            collection,
-            projection,
-            selection,
-            args,
-            "${MediaStore.Images.ImageColumns.DATE_TAKEN} DESC, ${MediaStore.MediaColumns.DATE_ADDED} DESC",
-        )?.use { cursor ->
-            val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
-            val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DISPLAY_NAME)
-            val mimeColumn = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MIME_TYPE)
-            val typeColumn = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MEDIA_TYPE)
+        cursorResult?.use { cursor ->
+            val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+            val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
+            val mimeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
             val widthColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.WIDTH)
             val heightColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.HEIGHT)
             val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.VideoColumns.DURATION)
@@ -79,15 +87,13 @@ class MediaStoreRepository(private val context: Context) {
             val bucketIdColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.ImageColumns.BUCKET_ID)
             val bucketNameColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.ImageColumns.BUCKET_DISPLAY_NAME)
             val favouriteColumn = if (Build.VERSION.SDK_INT >= 30) cursor.getColumnIndex(MediaStore.MediaColumns.IS_FAVORITE) else -1
+            val trashedColumn = if (Build.VERSION.SDK_INT >= 30) cursor.getColumnIndex(MediaStore.MediaColumns.IS_TRASHED) else -1
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idColumn)
-                val type = cursor.getInt(typeColumn)
-                val kind = if (type == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO) MediaKind.VIDEO else MediaKind.IMAGE
-                val baseUri = if (kind == MediaKind.VIDEO) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
                 val taken = cursor.getLong(takenColumn).takeIf { it > 0 } ?: cursor.getLong(addedColumn) * 1000L
                 result += GalleryMedia(
-                    id = id,
-                    uri = ContentUris.withAppendedId(baseUri, id),
+                    id = if (kind == MediaKind.VIDEO) -id else id,
+                    uri = ContentUris.withAppendedId(collection, id),
                     name = cursor.getString(nameColumn).orEmpty().ifBlank { "Untitled" },
                     mimeType = cursor.getString(mimeColumn).orEmpty(),
                     kind = kind,
@@ -99,10 +105,11 @@ class MediaStoreRepository(private val context: Context) {
                     bucketId = cursor.getLong(bucketIdColumn),
                     bucketName = cursor.getString(bucketNameColumn).orEmpty().ifBlank { "Pictures" },
                     isFavourite = favouriteColumn >= 0 && cursor.getInt(favouriteColumn) == 1,
+                    isTrashed = trashedColumn >= 0 && cursor.getInt(trashedColumn) == 1,
                 )
             }
         }
-        result
+        return result
     }
 
     fun albums(media: List<GalleryMedia>): List<GalleryAlbum> = media

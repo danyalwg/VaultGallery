@@ -26,4 +26,15 @@ class GalleryLogicTest {
     @Test fun dateGroupingIsDeterministicForLocale() {
         assertEquals("1 Jan", GalleryLogic.dateGroup(0, Locale.ENGLISH))
     }
+
+    @Test fun slideSelectionAddsTheInclusiveRangeInEitherDirection() {
+        val ids = listOf(10L, 20L, 30L, 40L, 50L)
+        assertEquals(setOf(20L, 30L, 40L), GalleryLogic.slideSelection(ids, emptySet(), 20L, 40L, true))
+        assertEquals(setOf(20L, 30L, 40L), GalleryLogic.slideSelection(ids, emptySet(), 40L, 20L, true))
+    }
+
+    @Test fun slideSelectionCanRemoveARangeWithoutTouchingTheBaseOutsideIt() {
+        val ids = listOf(1L, 2L, 3L, 4L, 5L)
+        assertEquals(setOf(1L, 5L, 99L), GalleryLogic.slideSelection(ids, ids.toSet() + 99L, 2L, 4L, false))
+    }
 }

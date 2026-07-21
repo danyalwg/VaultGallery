@@ -3,13 +3,15 @@
 package com.danyal.vaultgallery
 
 import android.content.Intent
+import android.content.ComponentName
+import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import android.widget.Toast
-import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -18,8 +20,12 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,6 +71,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -90,6 +99,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
@@ -106,8 +117,35 @@ import com.danyal.vaultgallery.ui.VaultSurface
 import com.danyal.vaultgallery.ui.VaultTheme
 import kotlinx.coroutines.launch
 
-class SecureGalleryActivity : ComponentActivity() {
+class SecureGalleryActivity : FragmentActivity() {
     private val secureViewModel by viewModels<SecureGalleryViewModel>()
+    private var biometricInProgress = false
+    private var biometricEnrollment = false
+
+    private val biometricPrompt by lazy {
+        BiometricPrompt(
+            this,
+            ContextCompat.getMainExecutor(this),
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    biometricInProgress = false
+                    if (biometricEnrollment) secureViewModel.completeBiometricEnrollment()
+                    else secureViewModel.completeBiometricUnlock()
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    biometricInProgress = false
+                    if (errorCode != BiometricPrompt.ERROR_USER_CANCELED && errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON && errorCode != BiometricPrompt.ERROR_CANCELED) {
+                        secureViewModel.reportError(errString.toString())
+                    }
+                }
+
+                override fun onAuthenticationFailed() {
+                    secureViewModel.reportError("Fingerprint or face was not recognized")
+                }
+            },
+        )
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -127,8 +165,10 @@ class SecureGalleryActivity : ComponentActivity() {
                 Box(Modifier.fillMaxSize()) {
                     SecureGalleryApp(
                         viewModel = secureViewModel,
-                        onOpenPicker = {},
                         onShare = ::shareSecure,
+                        biometricsAvailable = biometricsAvailable(),
+                        onBiometricUnlock = { showBiometricPrompt(enrollment = false) },
+                        onBiometricEnrollment = { showBiometricPrompt(enrollment = true) },
                     )
                     if (BuildConfig.DEBUG) {
                         Text(
@@ -144,8 +184,35 @@ class SecureGalleryActivity : ComponentActivity() {
     }
 
     override fun onPause() {
-        secureViewModel.lock()
+        if (!biometricInProgress) secureViewModel.onBackgrounded()
         super.onPause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        secureViewModel.onForegrounded()
+    }
+
+    private fun biometricsAvailable(): Boolean = BiometricManager.from(this).canAuthenticate(
+        BiometricManager.Authenticators.BIOMETRIC_STRONG,
+    ) == BiometricManager.BIOMETRIC_SUCCESS
+
+    private fun showBiometricPrompt(enrollment: Boolean) {
+        if (!biometricsAvailable()) {
+            secureViewModel.reportError("Set up a fingerprint or strong face unlock in Android settings first")
+            return
+        }
+        val prepared = if (enrollment) secureViewModel.prepareBiometricEnrollment() else secureViewModel.prepareBiometricUnlock()
+        if (!prepared) return
+        biometricEnrollment = enrollment
+        biometricInProgress = true
+        val info = BiometricPrompt.PromptInfo.Builder()
+            .setTitle(if (enrollment) "Enable biometric unlock" else "Unlock Secure Gallery")
+            .setSubtitle(if (enrollment) "Confirm your identity to protect the vault key" else "Use your fingerprint or face")
+            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+            .setNegativeButtonText(if (enrollment) "Not now" else "Use PIN")
+            .build()
+        biometricPrompt.authenticate(info)
     }
 
     private fun shareSecure(item: SecureItem, file: java.io.File) {
@@ -162,19 +229,30 @@ class SecureGalleryActivity : ComponentActivity() {
 private enum class SecureTab { PICTURES, ALBUMS, STORIES, MENU }
 
 @Composable
-private fun SecureGalleryApp(viewModel: SecureGalleryViewModel, onOpenPicker: () -> Unit, onShare: (SecureItem, java.io.File) -> Unit) {
+private fun SecureGalleryApp(
+    viewModel: SecureGalleryViewModel,
+    onShare: (SecureItem, java.io.File) -> Unit,
+    biometricsAvailable: Boolean,
+    onBiometricUnlock: () -> Unit,
+    onBiometricEnrollment: () -> Unit,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var tab by remember { mutableStateOf(SecureTab.PICTURES) }
     var viewer by remember { mutableStateOf<SecureItem?>(null) }
     var settings by remember { mutableStateOf(false) }
+    var trashOpen by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(100)) { uris -> viewModel.import(uris) }
     LaunchedEffect(state.unlocked) { if (!state.unlocked) { viewer = null; settings = false; tab = SecureTab.PICTURES } }
-    BackHandler(state.unlocked && (viewer != null || settings)) {
-        if (viewer != null) viewer = null else settings = false
+    BackHandler(state.unlocked && (viewer != null || settings || trashOpen)) {
+        when {
+            viewer != null -> viewer = null
+            settings -> settings = false
+            trashOpen -> trashOpen = false
+        }
     }
 
     if (!state.unlocked) {
-        SecureAuthScreen(state, viewModel::setup, viewModel::unlock)
+        SecureAuthScreen(state, viewModel::setup, viewModel::unlock, biometricsAvailable, onBiometricUnlock)
         return
     }
     if (viewer != null) {
@@ -182,7 +260,11 @@ private fun SecureGalleryApp(viewModel: SecureGalleryViewModel, onOpenPicker: ()
         return
     }
     if (settings) {
-        SecureSettings(viewModel, onBack = { settings = false })
+        SecureSettings(state, viewModel, biometricsAvailable, onBiometricEnrollment, onBack = { settings = false })
+        return
+    }
+    if (trashOpen) {
+        SecureTrashScreen(state, viewModel, onBack = { trashOpen = false })
         return
     }
 
@@ -195,19 +277,18 @@ private fun SecureGalleryApp(viewModel: SecureGalleryViewModel, onOpenPicker: ()
                 SecureTab.PICTURES -> SecurePictures(
                     state,
                     onImport = {
-                        onOpenPicker()
                         picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
                     },
                     onOpen = { viewer = it },
                 )
                 SecureTab.ALBUMS -> SecureAlbums(state.items) { tab = SecureTab.PICTURES }
-                SecureTab.STORIES -> SecureEmptyStories()
+                SecureTab.STORIES -> SecureStories(state.items) { viewer = it }
                 SecureTab.MENU -> SecureMenu(
                     onImport = {
-                        onOpenPicker()
                         picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
                     },
                     onSettings = { settings = true },
+                    onTrash = { trashOpen = true },
                     onLock = viewModel::lock,
                 )
             }
@@ -226,9 +307,22 @@ private fun SecureGalleryApp(viewModel: SecureGalleryViewModel, onOpenPicker: ()
 }
 
 @Composable
-private fun SecureAuthScreen(state: SecureGalleryState, onSetup: (String, String) -> Unit, onUnlock: (String) -> Unit) {
+private fun SecureAuthScreen(
+    state: SecureGalleryState,
+    onSetup: (String, String) -> Unit,
+    onUnlock: (String) -> Unit,
+    biometricsAvailable: Boolean,
+    onBiometricUnlock: () -> Unit,
+) {
     var secret by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
+    var autoBiometricAttempted by remember { mutableStateOf(false) }
+    LaunchedEffect(state.configured, state.biometricEnabled, biometricsAvailable) {
+        if (state.configured && state.biometricEnabled && biometricsAvailable && !autoBiometricAttempted) {
+            autoBiometricAttempted = true
+            onBiometricUnlock()
+        }
+    }
     Column(
         Modifier.fillMaxSize().background(VaultBackground).statusBarsPadding().navigationBarsPadding().padding(28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -268,6 +362,10 @@ private fun SecureAuthScreen(state: SecureGalleryState, onSetup: (String, String
             enabled = !state.busy && secret.length >= 6,
             modifier = Modifier.fillMaxWidth(),
         ) { if (state.busy) CircularProgressIndicator(Modifier.size(22.dp)) else Text(if (state.configured) "Unlock" else "Create encrypted vault") }
+        if (state.configured && state.biometricEnabled && biometricsAvailable) {
+            Spacer(Modifier.height(10.dp))
+            TextButton(onClick = onBiometricUnlock, modifier = Modifier.fillMaxWidth()) { Text("Unlock with fingerprint or face") }
+        }
         Spacer(Modifier.height(16.dp))
         Text("Application-level protection; not an operating-system container.", color = VaultSecondary, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyMedium)
     }
@@ -344,27 +442,34 @@ private fun SecureAlbums(items: List<SecureItem>, onOpen: () -> Unit) {
 }
 
 @Composable
-private fun SecureEmptyStories() {
+private fun SecureStories(items: List<SecureItem>, onOpen: (SecureItem) -> Unit) {
     Column(Modifier.fillMaxSize()) {
         SecureToolbar("Secure stories")
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        if (items.size < 2) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Icon(Icons.Outlined.Movie, null, Modifier.size(48.dp), tint = VaultSecondary)
                 Text("No secure stories", style = MaterialTheme.typography.headlineMedium, color = VaultSecondary)
-                Text("Secure analysis is not enabled.", color = VaultSecondary)
+                Text("Import at least two items to create a private local story.", color = VaultSecondary)
             }
+        } else Column(Modifier.padding(16.dp).width(180.dp).clickable { onOpen(items.first()) }) {
+            Box(Modifier.fillMaxWidth().aspectRatio(0.82f).clip(RoundedCornerShape(22.dp)).background(VaultSurface), contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.Lock, "Private story", Modifier.size(54.dp), tint = VaultSecure)
+            }
+            Text("Private moments", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+            Text("${items.size} encrypted items", color = VaultSecondary)
         }
     }
 }
 
 @Composable
-private fun SecureMenu(onImport: () -> Unit, onSettings: () -> Unit, onLock: () -> Unit) {
+private fun SecureMenu(onImport: () -> Unit, onSettings: () -> Unit, onTrash: () -> Unit, onLock: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         SecureToolbar("Secure menu")
         Spacer(Modifier.weight(1f))
         Card(colors = CardDefaults.cardColors(containerColor = VaultRaised), shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth().padding(10.dp)) {
             Row(Modifier.fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.SpaceAround) {
                 SecureMenuAction(Icons.Outlined.Upload, "Import", onImport)
+                SecureMenuAction(Icons.Outlined.Delete, "Recycle bin", onTrash)
                 SecureMenuAction(Icons.Outlined.Settings, "Settings", onSettings)
                 SecureMenuAction(Icons.Outlined.Lock, "Lock now", onLock)
             }
@@ -426,10 +531,10 @@ private fun SecureViewer(item: SecureItem, viewModel: SecureGalleryViewModel, on
         },
     )
     if (deleteWarning) AlertDialog(
-        onDismissRequest = { deleteWarning = false }, title = { Text("Delete permanently?") },
-        text = { Text("This encrypted item will be removed immediately. This version has no secure recycle bin.") },
+        onDismissRequest = { deleteWarning = false }, title = { Text("Move to recycle bin?") },
+        text = { Text("The encrypted item can be restored for 30 days, then it is removed automatically.") },
         dismissButton = { TextButton(onClick = { deleteWarning = false }) { Text("Cancel") } },
-        confirmButton = { TextButton(onClick = { deleteWarning = false; onDelete() }) { Text("Delete") } },
+        confirmButton = { TextButton(onClick = { deleteWarning = false; onDelete() }) { Text("Move") } },
     )
 }
 
@@ -462,21 +567,82 @@ private fun SecureVideo(item: SecureItem, viewModel: SecureGalleryViewModel) {
 }
 
 @Composable
-private fun SecureSettings(viewModel: SecureGalleryViewModel, onBack: () -> Unit) {
+private fun SecureSettings(
+    state: SecureGalleryState,
+    viewModel: SecureGalleryViewModel,
+    biometricsAvailable: Boolean,
+    onBiometricEnrollment: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val context = LocalContext.current
     var resetPrompt by remember { mutableStateOf(false) }
+    var changePrompt by remember { mutableStateOf(false) }
+    var timeoutMenu by remember { mutableStateOf(false) }
+    var launcherVisible by remember { mutableStateOf(isSecureLauncherVisible(context)) }
     var typed by remember { mutableStateOf("") }
-    Column(Modifier.fillMaxSize()) {
+    var currentSecret by remember { mutableStateOf("") }
+    var newSecret by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf("") }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         SecureToolbar("Secure settings", onBack)
+        state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 18.dp)) }
+        Card(colors = CardDefaults.cardColors(containerColor = VaultSurface), shape = RoundedCornerShape(26.dp), modifier = Modifier.fillMaxWidth().padding(10.dp)) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Unlock and privacy", style = MaterialTheme.typography.titleLarge)
+                SecureSettingSwitch(
+                    title = "Biometric unlock",
+                    subtitle = if (biometricsAvailable) "Strong biometrics protect a separate vault-key envelope" else "Set up a strong biometric in Android settings first",
+                    checked = state.biometricEnabled,
+                    enabled = biometricsAvailable,
+                ) { enabled -> if (enabled) onBiometricEnrollment() else viewModel.disableBiometric() }
+                Box {
+                    SecureSettingLink("Auto-lock", lockTimeoutLabel(state.lockTimeoutMs)) { timeoutMenu = true }
+                    DropdownMenu(expanded = timeoutMenu, onDismissRequest = { timeoutMenu = false }) {
+                        listOf(0L to "Immediately", 30_000L to "30 seconds", 60_000L to "1 minute", 300_000L to "5 minutes", 900_000L to "15 minutes").forEach { (millis, label) ->
+                            DropdownMenuItem(text = { Text(label) }, onClick = { viewModel.setLockTimeout(millis); timeoutMenu = false })
+                        }
+                    }
+                }
+                SecureSettingSwitch(
+                    "Show separate launcher icon",
+                    "Gallery can still open the vault when this icon is hidden",
+                    launcherVisible,
+                    true,
+                ) { visible -> setSecureLauncherVisible(context, visible); launcherVisible = visible }
+                Button(onClick = { changePrompt = true }, modifier = Modifier.fillMaxWidth()) { Text("Change PIN or passphrase") }
+            }
+        }
         Card(colors = CardDefaults.cardColors(containerColor = VaultSurface), shape = RoundedCornerShape(26.dp), modifier = Modifier.fillMaxWidth().padding(10.dp)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                 Text("Protection status", style = MaterialTheme.typography.titleLarge)
-                Text("Encrypted media and metadata • Device-bound key wrapping • Screenshot protection • Lock on background", color = VaultSecondary)
+                Text("Encrypted media and metadata • Device-bound key wrapping • Screenshot protection • Timed auto-lock", color = VaultSecondary)
                 Button(onClick = viewModel::lock, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.Lock, null); Spacer(Modifier.width(8.dp)); Text("Lock now") }
-                Button(onClick = viewModel::clearTemporaryFiles, modifier = Modifier.fillMaxWidth()) { Text("Clear temporary share files") }
+                Button(onClick = {
+                    viewModel.clearTemporaryFiles()
+                    Toast.makeText(context, "Temporary share files cleared", Toast.LENGTH_SHORT).show()
+                }, modifier = Modifier.fillMaxWidth()) { Text("Clear temporary share files") }
                 TextButton(onClick = { resetPrompt = true }, modifier = Modifier.fillMaxWidth()) { Text("Reset Secure Gallery", color = MaterialTheme.colorScheme.error) }
             }
         }
     }
+    if (changePrompt) AlertDialog(
+        onDismissRequest = { changePrompt = false },
+        title = { Text("Change PIN or passphrase") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(currentSecret, { currentSecret = it }, label = { Text("Current") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+                OutlinedTextField(newSecret, { newSecret = it }, label = { Text("New") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+                OutlinedTextField(confirmation, { confirmation = it }, label = { Text("Confirm new") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+            }
+        },
+        dismissButton = { TextButton(onClick = { changePrompt = false }) { Text("Cancel") } },
+        confirmButton = {
+            TextButton(enabled = currentSecret.length >= 6 && newSecret.length >= 6 && newSecret == confirmation, onClick = {
+                viewModel.changeSecret(currentSecret, newSecret, confirmation)
+                currentSecret = ""; newSecret = ""; confirmation = ""; changePrompt = false
+            }) { Text("Change") }
+        },
+    )
     if (resetPrompt) AlertDialog(
         onDismissRequest = { resetPrompt = false; typed = "" }, title = { Text("Reset encrypted vault?") },
         text = {
@@ -487,5 +653,85 @@ private fun SecureSettings(viewModel: SecureGalleryViewModel, onBack: () -> Unit
         },
         dismissButton = { TextButton(onClick = { resetPrompt = false; typed = "" }) { Text("Cancel") } },
         confirmButton = { TextButton(enabled = typed == "DELETE", onClick = { resetPrompt = false; viewModel.reset() }) { Text("Reset") } },
+    )
+}
+
+@Composable
+private fun SecureSettingSwitch(title: String, subtitle: String, checked: Boolean, enabled: Boolean, onChecked: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(subtitle, color = VaultSecondary, style = MaterialTheme.typography.bodyMedium)
+        }
+        Switch(checked = checked, onCheckedChange = onChecked, enabled = enabled)
+    }
+}
+
+@Composable
+private fun SecureSettingLink(title: String, value: String, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        Text(value, color = VaultSecondary)
+    }
+}
+
+private fun lockTimeoutLabel(timeoutMs: Long): String = when (timeoutMs) {
+    0L -> "Immediately"
+    30_000L -> "30 seconds"
+    60_000L -> "1 minute"
+    300_000L -> "5 minutes"
+    else -> "15 minutes"
+}
+
+internal fun isSecureLauncherVisible(context: Context): Boolean {
+    val component = ComponentName(context.packageName, "${context.packageName}.SecureGalleryLauncher")
+    return context.packageManager.getComponentEnabledSetting(component) != PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+}
+
+internal fun setSecureLauncherVisible(context: Context, visible: Boolean) {
+    val component = ComponentName(context.packageName, "${context.packageName}.SecureGalleryLauncher")
+    context.packageManager.setComponentEnabledSetting(
+        component,
+        if (visible) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+        PackageManager.DONT_KILL_APP,
+    )
+    Toast.makeText(context, if (visible) "Secure Gallery icon shown" else "Secure Gallery icon hidden", Toast.LENGTH_SHORT).show()
+}
+
+@Composable
+private fun SecureTrashScreen(state: SecureGalleryState, viewModel: SecureGalleryViewModel, onBack: () -> Unit) {
+    var selected by remember { mutableStateOf<SecureItem?>(null) }
+    var emptyPrompt by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize()) {
+        SecureToolbar("Recycle bin", onBack) {
+            if (state.trashItems.isNotEmpty()) TextButton(onClick = { emptyPrompt = true }) { Text("Empty") }
+        }
+        Text("Items are deleted automatically after 30 days.", color = VaultSecondary, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        if (state.trashItems.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Recycle bin is empty", color = VaultSecondary) }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(4),
+                contentPadding = PaddingValues(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) { items(state.trashItems, key = { it.id }) { SecureTile(it) { item -> selected = item } } }
+        }
+    }
+    selected?.let { item ->
+        AlertDialog(
+            onDismissRequest = { selected = null },
+            title = { Text(item.name) },
+            text = { Text("Restore this encrypted item or delete it permanently?") },
+            dismissButton = { TextButton(onClick = { selected = null; viewModel.deletePermanently(item) }) { Text("Delete permanently", color = MaterialTheme.colorScheme.error) } },
+            confirmButton = { TextButton(onClick = { selected = null; viewModel.restore(item) }) { Text("Restore") } },
+        )
+    }
+    if (emptyPrompt) AlertDialog(
+        onDismissRequest = { emptyPrompt = false },
+        title = { Text("Empty recycle bin?") },
+        text = { Text("All ${state.trashItems.size} encrypted items will be permanently deleted. This cannot be undone.") },
+        dismissButton = { TextButton(onClick = { emptyPrompt = false }) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = { emptyPrompt = false; viewModel.emptyTrash() }) { Text("Delete all", color = MaterialTheme.colorScheme.error) } },
     )
 }

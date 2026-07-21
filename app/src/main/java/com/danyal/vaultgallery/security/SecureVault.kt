@@ -45,6 +45,8 @@ data class SecureItem(
     val mimeType: String,
     val dateTakenMs: Long,
     val sizeBytes: Long,
+    val isTrashed: Boolean = false,
+    val trashedAtMs: Long = 0L,
 ) {
     val isVideo: Boolean get() = mimeType.startsWith("video/")
 }
@@ -56,6 +58,7 @@ class SecureVault(private val context: Context) {
     private val indexFile = File(root, "index.vgi")
     private val random = SecureRandom()
     private val alias = "${context.packageName}.vault-device-wrap-v1"
+    private val biometricAlias = "${context.packageName}.vault-biometric-wrap-v1"
 
     init {
         mediaRoot.mkdirs()
@@ -98,10 +101,88 @@ class SecureVault(private val context: Context) {
         }
     }
 
-    fun list(master: ByteArray): List<SecureItem> {
+    fun changeSecret(master: ByteArray, newSecret: CharArray) {
+        require(newSecret.size >= 6) { "Use at least six characters" }
+        require(master.size == 32) { "Vault is locked" }
+        val salt = randomBytes(16)
+        val pinKey = derive(newSecret, salt)
+        val pinEnvelope = try {
+            seal(SecretKeySpec(pinKey, "AES"), master, AUTH_AAD)
+        } finally {
+            pinKey.fill(0)
+        }
+        val wrapped = try {
+            sealWithProviderIv(deviceKey(), pinEnvelope, DEVICE_AAD)
+        } finally {
+            pinEnvelope.fill(0)
+        }
+        prefs.edit()
+            .putString("salt", b64(salt))
+            .putString("wrapped_master", b64(wrapped))
+            .putInt("argon_time", ARGON_TIME)
+            .putInt("argon_memory_kib", ARGON_MEMORY_KIB)
+            .apply()
+    }
+
+    fun isBiometricEnabled(): Boolean = prefs.contains("biometric_wrapped_master")
+
+    fun prepareBiometricEnrollment() {
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        if (keyStore.containsAlias(biometricAlias)) keyStore.deleteEntry(biometricAlias)
+        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        val builder = KeyGenParameterSpec.Builder(
+            biometricAlias,
+            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+        )
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setKeySize(256)
+            .setUserAuthenticationRequired(true)
+            .setInvalidatedByBiometricEnrollment(true)
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            builder.setUserAuthenticationParameters(BIOMETRIC_AUTH_WINDOW_SECONDS, KeyProperties.AUTH_BIOMETRIC_STRONG)
+        } else {
+            @Suppress("DEPRECATION")
+            builder.setUserAuthenticationValidityDurationSeconds(BIOMETRIC_AUTH_WINDOW_SECONDS)
+        }
+        generator.init(builder.build())
+        generator.generateKey()
+    }
+
+    fun completeBiometricEnrollment(master: ByteArray) {
+        require(master.size == 32) { "Vault is locked" }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, biometricKey())
+        cipher.updateAAD(BIOMETRIC_AAD)
+        val nonce = cipher.iv
+        require(nonce.size == 12) { "Unsupported biometric key IV" }
+        prefs.edit().putString("biometric_wrapped_master", b64(nonce + cipher.doFinal(master))).apply()
+    }
+
+    fun prepareBiometricUnlock() {
+        require(prefs.contains("biometric_wrapped_master")) { "Biometric unlock is not enabled" }
+        biometricKey()
+    }
+
+    fun completeBiometricUnlock(): ByteArray {
+        val envelope = unb64(prefs.getString("biometric_wrapped_master", null) ?: throw SecurityException("Biometric unlock is not enabled"))
+        require(envelope.size > 12 + GCM_TAG_SIZE) { "Invalid biometric key envelope" }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, biometricKey(), GCMParameterSpec(128, envelope.copyOfRange(0, 12)))
+        cipher.updateAAD(BIOMETRIC_AAD)
+        return cipher.doFinal(envelope, 12, envelope.size - 12)
+    }
+
+    fun disableBiometric() {
+        prefs.edit().remove("biometric_wrapped_master").apply()
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        if (keyStore.containsAlias(biometricAlias)) keyStore.deleteEntry(biometricAlias)
+    }
+
+    fun list(master: ByteArray, includeTrashed: Boolean = false): List<SecureItem> {
         if (!indexFile.exists()) return emptyList()
         val plain = open(SecretKeySpec(master, "AES"), indexFile.readBytes(), INDEX_AAD)
-        return try {
+        val all = try {
             val json = JSONArray(String(plain, Charsets.UTF_8))
             buildList {
                 for (index in 0 until json.length()) {
@@ -113,6 +194,8 @@ class SecureVault(private val context: Context) {
                             mimeType = item.getString("mime"),
                             dateTakenMs = item.getLong("date"),
                             sizeBytes = item.getLong("size"),
+                            isTrashed = item.optBoolean("trashed", false),
+                            trashedAtMs = item.optLong("trashed_at", 0L),
                         ),
                     )
                 }
@@ -120,6 +203,13 @@ class SecureVault(private val context: Context) {
         } finally {
             plain.fill(0)
         }
+        val expiry = System.currentTimeMillis() - TRASH_RETENTION_MS
+        val expired = all.filter { it.isTrashed && it.trashedAtMs in 1..expiry }
+        if (expired.isNotEmpty()) {
+            expired.forEach { encryptedFile(it).delete() }
+            writeIndex(master, all - expired.toSet())
+        }
+        return all.filterNot { it in expired }.filter { includeTrashed || !it.isTrashed }
     }
 
     fun importUri(master: ByteArray, resolver: ContentResolver, uri: Uri): SecureItem {
@@ -145,13 +235,13 @@ class SecureVault(private val context: Context) {
             temp.delete()
         }
         val item = SecureItem(id, name, mime, System.currentTimeMillis(), size)
-        val items = list(master).toMutableList().apply { add(item) }
+        val items = list(master, includeTrashed = true).toMutableList().apply { add(item) }
         writeIndex(master, items)
         return item
     }
 
     fun delete(master: ByteArray, item: SecureItem) {
-        val remaining = list(master).filterNot { it.id == item.id }
+        val remaining = list(master, includeTrashed = true).filterNot { it.id == item.id }
         val file = encryptedFile(item)
         val tombstone = File(mediaRoot, "${item.id}.delete")
         if (file.exists() && !file.renameTo(tombstone)) throw IOException("Could not prepare secure deletion")
@@ -162,6 +252,26 @@ class SecureVault(private val context: Context) {
             if (tombstone.exists()) tombstone.renameTo(file)
             throw error
         }
+    }
+
+    fun moveToTrash(master: ByteArray, item: SecureItem) {
+        val items = list(master, includeTrashed = true).map {
+            if (it.id == item.id) it.copy(isTrashed = true, trashedAtMs = System.currentTimeMillis()) else it
+        }
+        writeIndex(master, items)
+    }
+
+    fun restore(master: ByteArray, item: SecureItem) {
+        val items = list(master, includeTrashed = true).map {
+            if (it.id == item.id) it.copy(isTrashed = false, trashedAtMs = 0L) else it
+        }
+        writeIndex(master, items)
+    }
+
+    fun emptyTrash(master: ByteArray) {
+        val items = list(master, includeTrashed = true)
+        items.filter { it.isTrashed }.forEach { encryptedFile(it).delete() }
+        writeIndex(master, items.filterNot { it.isTrashed })
     }
 
     fun decryptBytes(master: ByteArray, item: SecureItem, maxBytes: Int = 64 * 1024 * 1024): ByteArray {
@@ -208,6 +318,7 @@ class SecureVault(private val context: Context) {
         prefs.edit().clear().apply()
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         if (keyStore.containsAlias(alias)) keyStore.deleteEntry(alias)
+        if (keyStore.containsAlias(biometricAlias)) keyStore.deleteEntry(biometricAlias)
         mediaRoot.mkdirs()
     }
 
@@ -219,6 +330,7 @@ class SecureVault(private val context: Context) {
             json.put(JSONObject().apply {
                 put("id", item.id); put("name", item.name); put("mime", item.mimeType)
                 put("date", item.dateTakenMs); put("size", item.sizeBytes)
+                put("trashed", item.isTrashed); put("trashed_at", item.trashedAtMs)
             })
         }
         val encrypted = seal(SecretKeySpec(master, "AES"), json.toString().toByteArray(), INDEX_AAD)
@@ -337,6 +449,11 @@ class SecureVault(private val context: Context) {
         return generator.generateKey()
     }
 
+    private fun biometricKey(): SecretKey {
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        return keyStore.getKey(biometricAlias, null) as? SecretKey ?: throw SecurityException("Biometric key is unavailable")
+    }
+
     private fun seal(key: SecretKey, plain: ByteArray, aad: ByteArray): ByteArray {
         val nonce = randomBytes(12)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -373,11 +490,14 @@ class SecureVault(private val context: Context) {
         private val AUTH_AAD = "vault-auth-v1".toByteArray()
         private val DEVICE_AAD = "vault-device-v1".toByteArray()
         private val INDEX_AAD = "vault-index-v1".toByteArray()
+        private val BIOMETRIC_AAD = "vault-biometric-v1".toByteArray()
         private const val FORMAT_VERSION = 1
         private const val CHUNK_SIZE = 1024 * 1024
         private const val GCM_TAG_SIZE = 16
         private const val ARGON_TIME = 3
         private const val ARGON_MEMORY_KIB = 65_536
+        private const val TRASH_RETENTION_MS = 30L * 24 * 60 * 60 * 1000
+        private const val BIOMETRIC_AUTH_WINDOW_SECONDS = 15
     }
 }
 

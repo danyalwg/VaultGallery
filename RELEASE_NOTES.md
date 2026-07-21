@@ -1,7 +1,16 @@
-# Vault Gallery 1.0 Debug Milestone
+# Vault Gallery 1.1 Debug
 
-This milestone provides a signed, installable debug APK with public Gallery and encrypted Secure Gallery launchers.
+Version 1.1 turns the original functional milestone into a much more complete Pixel replacement for Samsung Gallery.
 
-Public Gallery reads user-granted MediaStore photos/videos, groups them by date and album, supports search/selection/sharing, requests platform deletion approval, and opens images or videos. Secure Gallery creates a device-bound Argon2id-protected vault, encrypts imported media in authenticated chunks, keeps metadata encrypted, locks when paused, blocks screenshots, plays secure videos through an on-demand decrypting Media3 data source, and requires confirmation before sharing plaintext or deleting.
+## Highlights
 
-Read `KNOWN_LIMITATIONS.md` before using real private media. This APK is debug-signed, not a production store release.
+- Samsung-style long-press-and-slide selection with range deselection and edge scrolling.
+- Strong-biometric Secure Gallery unlock backed by an authentication-bound Android Keystore key.
+- Change PIN/passphrase, configurable auto-lock delays, lock-now, and optional Secure Gallery launcher hiding.
+- Recoverable encrypted Secure Gallery recycle bin with automatic 30-day expiry.
+- Android-native public favourites, trash, restore, empty-bin, and permanent-delete operations.
+- Functional grid-density, essential-album, external-player, permissions, privacy, and launcher settings.
+- Local monthly photo stories, album search, and improved confirmations and status feedback.
+- MediaStore image/video queries separated for broader Android compatibility.
+
+The build remains debug-signed and visibly marked DEBUG. Review `KNOWN_LIMITATIONS.md` before relying on it for irreplaceable private media.

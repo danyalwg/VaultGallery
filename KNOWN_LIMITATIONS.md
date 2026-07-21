@@ -1,22 +1,29 @@
 # Known Limitations
 
-This APK is an installable functional milestone, not the complete production scope described by the master brief.
+Vault Gallery 1.1 is a substantial personal-use debug build, not a Play Store production release.
 
 ## Implemented
 
-- Two launcher activities labelled Gallery and Secure Gallery.
-- Public MediaStore permission flow, timeline, four-column thumbnails, date groups, albums, search, long-press selection, sharing, Android 11+ approved deletion, image zoom, and Media3 video playback.
-- Albums, Stories empty state, Menu, persisted settings, dark Compose layout, accessibility labels, and visible DEBUG marking.
-- Secure PIN/passphrase setup, Argon2id, increasing persisted unlock delays, Android Keystore device wrapping, random master key, per-object derived keys, AES-256-GCM chunks, encrypted metadata index, Photo Picker imports, encrypted image viewing, seekable encrypted Media3 video playback, explicit decrypted sharing, permanent delete/reset confirmation, screenshot protection, disabled backup, and lock on pause/process restart.
+- Two distinct Gallery and Secure Gallery experiences, with an optional hideable Secure Gallery launcher icon.
+- Public MediaStore permission flow, date timeline, configurable 3/4/5-column grids, albums, search, zoom, Media3 video playback, external-player routing, local monthly stories, and responsive dark UI.
+- Samsung-style long-press slide selection across the timeline and album grids, including inclusive range add/remove and edge auto-scroll.
+- Android system favourites and recycle-bin operations: add/remove favourites, move to trash, browse trash, restore, empty, and permanently delete through platform approval dialogs.
+- Sharing, copy-to-Secure-Gallery, image/video viewing, and deliberate confirmation for destructive viewer actions.
+- Secure PIN/passphrase setup, Argon2id, persisted increasing unlock delays, credential changes, configurable background auto-lock, and real Android biometric unlock.
+- A random vault master key wrapped independently by passphrase and a biometric-authenticated Android Keystore key; biometric enrollment changes invalidate the biometric key.
+- Per-object derived keys, AES-256-GCM chunk encryption, encrypted metadata, Photo Picker imports, encrypted image viewing, seekable encrypted Media3 video playback, and explicit decrypted sharing.
+- Encrypted 30-day Secure Gallery recycle bin with restore, empty, and permanent-delete controls; screenshot protection and disabled Android backup.
 
 ## Not yet implemented
 
-- Biometrics, recovery key, change-passphrase, configurable lock delay, launcher hiding, secure recycle bin, encrypted thumbnails, durable WorkManager import queues, pause/resume, folder-tree hierarchy imports, duplicate policy, transactional source deletion after secure copy, and encrypted backup.
-- Public trash browser, favourite mutation, location map/editing, shared albums, clean-out analysis, generated stories, OCR, labels, people grouping, cloud sync, advanced search, creative tools, photo/video editing, slideshow/GIF/movie creation, and benchmarks.
-- Full Gradle module split, Room/Hilt, complete screenshot/device matrix, tablet navigation rail, and the full security test matrix.
+- Recovery keys, encrypted device-to-device backup/migration, durable WorkManager import queues, resumable large imports, folder-tree imports, duplicate detection, or transactional deletion of the public source after a secure copy.
+- Encrypted thumbnail caches; secure image thumbnails are decrypted on demand while the vault is unlocked.
+- Location maps/editing, shared albums, people grouping, OCR, semantic labels, cloud sync, advanced cleanup analysis, or full photo/video editing and creative tools.
+- Samsung account/network features, vendor-specific motion-photo playback, RAW workflows, Chromecast, or cross-device continuity.
+- Full tablet/foldable layouts, performance benchmarks for extremely large libraries, release signing, store packaging, accessibility certification, and a complete physical-device matrix.
 
 ## Security boundary
 
-Secure Gallery is application-level encrypted storage, not an operating-system container. Rooted or compromised devices, privileged memory inspection, malicious accessibility services, OS/vendor capture defects, and physical cameras are outside its reliable boundary. Shared plaintext can be retained by recipients. Flash wear leveling prevents guaranteed forensic overwrite.
+Secure Gallery is application-level encrypted storage, not an operating-system container. Rooted or compromised devices, privileged memory inspection, malicious accessibility services, OS/vendor capture defects, and physical cameras remain outside its reliable boundary. Shared plaintext can be retained by recipients. Flash wear leveling prevents guaranteed forensic overwrite.
 
-The APK is debug-signed and visibly marked DEBUG. It is suitable for evaluation and personal testing, not store publication or irreplaceable private media until the remaining recovery, migration, and device-matrix work is complete.
+The APK is debug-signed and visibly marked DEBUG. It is suitable for evaluation and careful personal testing, but irreplaceable private media should remain backed up until migration, recovery, and physical-device testing are completed.

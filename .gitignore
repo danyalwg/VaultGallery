@@ -6,3 +6,4 @@
 /.kotlin/
 /design-reference/reference-images/
 /artifacts/*.apk
+/artifacts/*.xml

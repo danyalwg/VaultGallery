@@ -15,6 +15,7 @@ data class PublicGalleryState(
     val loading: Boolean = true,
     val hasAccess: Boolean = false,
     val media: List<GalleryMedia> = emptyList(),
+    val trash: List<GalleryMedia> = emptyList(),
     val selectedIds: Set<Long> = emptySet(),
     val error: String? = null,
 )
@@ -28,12 +29,16 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             val hasAccess = repository.hasAnyAccess()
             _state.value = _state.value.copy(loading = true, hasAccess = hasAccess, error = null)
-            runCatching { if (hasAccess) repository.loadMedia() else emptyList() }
-                .onSuccess { media ->
+            runCatching {
+                if (hasAccess) repository.loadMedia() to repository.loadMedia(includeTrashed = true).filter { it.isTrashed }
+                else emptyList<GalleryMedia>() to emptyList()
+            }
+                .onSuccess { (media, trash) ->
                     _state.value = _state.value.copy(
                         loading = false,
                         hasAccess = hasAccess,
                         media = media,
+                        trash = trash,
                         selectedIds = _state.value.selectedIds.intersect(media.mapTo(HashSet()) { it.id }),
                     )
                 }
@@ -47,6 +52,11 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         val selected = _state.value.selectedIds.toMutableSet()
         if (!selected.add(id)) selected.remove(id)
         _state.value = _state.value.copy(selectedIds = selected)
+    }
+
+    fun setSelection(ids: Set<Long>) {
+        val available = _state.value.media.mapTo(HashSet()) { it.id }
+        _state.value = _state.value.copy(selectedIds = ids.intersect(available))
     }
 
     fun selectAll(items: List<GalleryMedia>) {

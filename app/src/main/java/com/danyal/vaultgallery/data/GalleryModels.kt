@@ -18,6 +18,7 @@ data class GalleryMedia(
     val bucketId: Long,
     val bucketName: String,
     val isFavourite: Boolean,
+    val isTrashed: Boolean = false,
 )
 
 data class GalleryAlbum(

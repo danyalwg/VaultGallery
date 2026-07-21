@@ -22,7 +22,12 @@ import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,6 +49,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -88,6 +94,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -98,6 +106,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -125,10 +135,12 @@ import com.danyal.vaultgallery.ui.VaultTheme
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 class MainGalleryActivity : ComponentActivity() {
     private val galleryViewModel by viewModels<GalleryViewModel>()
-    private val deleteLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+    private val mediaActionLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             galleryViewModel.clearSelection()
             galleryViewModel.refresh()
@@ -147,10 +159,32 @@ class MainGalleryActivity : ComponentActivity() {
     fun deleteMedia(uris: List<Uri>) {
         if (uris.isEmpty()) return
         if (Build.VERSION.SDK_INT >= 30) {
-            val pending = MediaStore.createDeleteRequest(contentResolver, uris)
-            deleteLauncher.launch(IntentSenderRequest.Builder(pending.intentSender).build())
+            val pending = MediaStore.createTrashRequest(contentResolver, uris, true)
+            mediaActionLauncher.launch(IntentSenderRequest.Builder(pending.intentSender).build())
         } else {
             Toast.makeText(this, "Delete approval requires Android 11 or later", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun restoreMedia(uris: List<Uri>) {
+        if (uris.isEmpty() || Build.VERSION.SDK_INT < 30) return
+        val pending = MediaStore.createTrashRequest(contentResolver, uris, false)
+        mediaActionLauncher.launch(IntentSenderRequest.Builder(pending.intentSender).build())
+    }
+
+    fun deletePermanently(uris: List<Uri>) {
+        if (uris.isEmpty() || Build.VERSION.SDK_INT < 30) return
+        val pending = MediaStore.createDeleteRequest(contentResolver, uris)
+        mediaActionLauncher.launch(IntentSenderRequest.Builder(pending.intentSender).build())
+    }
+
+    fun setFavourite(uris: List<Uri>, favourite: Boolean) {
+        if (uris.isEmpty()) return
+        if (Build.VERSION.SDK_INT >= 30) {
+            val pending = MediaStore.createFavoriteRequest(contentResolver, uris, favourite)
+            mediaActionLauncher.launch(IntentSenderRequest.Builder(pending.intentSender).build())
+        } else {
+            Toast.makeText(this, "System favourites require Android 11 or later", Toast.LENGTH_LONG).show()
         }
     }
 }
@@ -169,15 +203,19 @@ private fun PublicGalleryApp(viewModel: GalleryViewModel, activity: MainGalleryA
     var searchOpen by remember { mutableStateOf(false) }
     var kindFilter by remember { mutableStateOf<MediaKind?>(null) }
     var favouriteOnly by remember { mutableStateOf(false) }
+    var trashOpen by remember { mutableStateOf(false) }
+    var storyItems by remember { mutableStateOf<List<GalleryMedia>?>(null) }
     val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { viewModel.refresh() }
 
     LaunchedEffect(Unit) { viewModel.refresh() }
-    BackHandler(viewer != null || settings || allAlbums || albumFilter != null || state.selectedIds.isNotEmpty()) {
+    BackHandler(viewer != null || storyItems != null || settings || trashOpen || allAlbums || albumFilter != null || state.selectedIds.isNotEmpty()) {
         when {
             viewer != null -> viewer = null
+            storyItems != null -> storyItems = null
             settings -> settings = false
+            trashOpen -> trashOpen = false
             allAlbums -> allAlbums = false
             albumFilter != null -> albumFilter = null
             state.selectedIds.isNotEmpty() -> viewModel.clearSelection()
@@ -190,12 +228,27 @@ private fun PublicGalleryApp(viewModel: GalleryViewModel, activity: MainGalleryA
             onBack = { viewer = null },
             onShare = { shareUris(activity, listOf(viewer!!.uri), viewer!!.mimeType) },
             onSecure = { launchSecureImport(activity, arrayListOf(viewer!!.uri)) },
+            onFavourite = { activity.setFavourite(listOf(viewer!!.uri), !viewer!!.isFavourite); viewer = null },
             onDelete = { activity.deleteMedia(listOf(viewer!!.uri)); viewer = null },
         )
         return
     }
+    if (storyItems != null) {
+        StoryViewer(storyItems!!, onBack = { storyItems = null })
+        return
+    }
     if (settings) {
         GallerySettings(onBack = { settings = false })
+        return
+    }
+    if (trashOpen) {
+        PublicTrashScreen(
+            state.trash,
+            onBack = { trashOpen = false },
+            onRestore = { activity.restoreMedia(listOf(it.uri)) },
+            onDelete = { activity.deletePermanently(listOf(it.uri)) },
+            onEmpty = { activity.deletePermanently(state.trash.map { it.uri }) },
+        )
         return
     }
 
@@ -208,7 +261,9 @@ private fun PublicGalleryApp(viewModel: GalleryViewModel, activity: MainGalleryA
         }
     }
     val albums = remember(state.media) { MediaStoreRepository(activity).albums(state.media) }
-    val selectedUris = state.media.filter { it.id in state.selectedIds }.map { it.uri }
+    val selectedMedia = state.media.filter { it.id in state.selectedIds }
+    val selectedUris = selectedMedia.map { it.uri }
+    val allSelectedFavourite = selectedMedia.isNotEmpty() && selectedMedia.all { it.isFavourite }
 
     Scaffold(
         containerColor = VaultBackground,
@@ -216,11 +271,11 @@ private fun PublicGalleryApp(viewModel: GalleryViewModel, activity: MainGalleryA
             Column(Modifier.background(VaultBackground).navigationBarsPadding()) {
                 if (state.selectedIds.isNotEmpty()) {
                     SelectionBar(
-                        count = state.selectedIds.size,
                         onShare = { shareUris(activity, selectedUris, "*/*") },
                         onSecure = { launchSecureImport(activity, ArrayList(selectedUris)) },
+                        favouriteLabel = if (allSelectedFavourite) "Unfavourite" else "Favourite",
+                        onFavourite = { activity.setFavourite(selectedUris, !allSelectedFavourite) },
                         onDelete = { activity.deleteMedia(selectedUris) },
-                        onCancel = viewModel::clearSelection,
                     )
                 } else {
                     PublicBottomNavigation(tab) { next ->
@@ -242,10 +297,19 @@ private fun PublicGalleryApp(viewModel: GalleryViewModel, activity: MainGalleryA
                     title = albums.firstOrNull { it.bucketId == albumFilter }?.name ?: "Album",
                     media = filtered,
                     selected = state.selectedIds,
+                    query = query,
+                    searchOpen = searchOpen,
                     onBack = { albumFilter = null },
                     onSearch = { searchOpen = !searchOpen },
-                    onOpen = { if (state.selectedIds.isEmpty()) viewer = it else viewModel.toggleSelection(it.id) },
+                    onQuery = { query = it },
+                    onOpen = {
+                        if (state.selectedIds.isNotEmpty()) viewModel.toggleSelection(it.id)
+                        else if (it.kind == MediaKind.VIDEO && activity.getSharedPreferences("gallery-settings", 0).getBoolean("external_player", false)) {
+                            activity.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(it.uri, it.mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                        } else viewer = it
+                    },
                     onSelect = viewModel::toggleSelection,
+                    onSelectionSet = viewModel::setSelection,
                 )
                 tab == PublicTab.PICTURES -> PicturesScreen(
                     media = filtered,
@@ -255,8 +319,14 @@ private fun PublicGalleryApp(viewModel: GalleryViewModel, activity: MainGalleryA
                     searchOpen = searchOpen,
                     onQuery = { query = it },
                     onSearch = { searchOpen = !searchOpen },
-                    onOpen = { if (state.selectedIds.isEmpty()) viewer = it else viewModel.toggleSelection(it.id) },
+                    onOpen = {
+                        if (state.selectedIds.isNotEmpty()) viewModel.toggleSelection(it.id)
+                        else if (it.kind == MediaKind.VIDEO && activity.getSharedPreferences("gallery-settings", 0).getBoolean("external_player", false)) {
+                            activity.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(it.uri, it.mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                        } else viewer = it
+                    },
                     onSelect = viewModel::toggleSelection,
+                    onSelectionSet = viewModel::setSelection,
                     onSelectAll = { viewModel.selectAll(filtered) },
                     onRefresh = viewModel::refresh,
                 )
@@ -266,12 +336,13 @@ private fun PublicGalleryApp(viewModel: GalleryViewModel, activity: MainGalleryA
                     onOpen = { albumFilter = it.bucketId },
                     onSettings = { settings = true },
                 )
-                tab == PublicTab.STORIES -> StoriesScreen()
+                tab == PublicTab.STORIES -> StoriesScreen(state.media) { storyItems = it }
                 else -> MenuScreen(
                     onVideos = { query = ""; kindFilter = MediaKind.VIDEO; favouriteOnly = false; tab = PublicTab.PICTURES },
                     onRecent = { kindFilter = null; favouriteOnly = false; tab = PublicTab.PICTURES },
                     onFavourites = { query = ""; kindFilter = null; favouriteOnly = true; tab = PublicTab.PICTURES },
                     onSettings = { settings = true },
+                    onTrash = { trashOpen = true },
                     onSecure = { activity.startActivity(Intent(activity, SecureGalleryActivity::class.java)) },
                 )
             }
@@ -346,7 +417,7 @@ private fun GalleryToolbar(
 private fun PicturesScreen(
     media: List<GalleryMedia>, loading: Boolean, selected: Set<Long>, query: String, searchOpen: Boolean,
     onQuery: (String) -> Unit, onSearch: () -> Unit, onOpen: (GalleryMedia) -> Unit,
-    onSelect: (Long) -> Unit, onSelectAll: () -> Unit, onRefresh: () -> Unit,
+    onSelect: (Long) -> Unit, onSelectionSet: (Set<Long>) -> Unit, onSelectAll: () -> Unit, onRefresh: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
         if (selected.isNotEmpty()) {
@@ -374,7 +445,7 @@ private fun PicturesScreen(
         }
         if (loading) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         else if (media.isEmpty()) EmptyGallery()
-        else TimelineGrid(media, selected, onOpen, onSelect)
+        else TimelineGrid(media, selected, onOpen, onSelect, onSelectionSet)
     }
 }
 
@@ -390,15 +461,67 @@ private fun EmptyGallery() {
 }
 
 @Composable
-private fun TimelineGrid(media: List<GalleryMedia>, selected: Set<Long>, onOpen: (GalleryMedia) -> Unit, onSelect: (Long) -> Unit) {
+private fun TimelineGrid(
+    media: List<GalleryMedia>,
+    selected: Set<Long>,
+    onOpen: (GalleryMedia) -> Unit,
+    onSelect: (Long) -> Unit,
+    onSelectionSet: (Set<Long>) -> Unit,
+) {
+    val context = LocalContext.current
+    val gridColumns = context.getSharedPreferences("gallery-settings", 0).getInt("grid_columns", 4).coerceIn(3, 5)
     val format = remember { SimpleDateFormat("d MMM", Locale.getDefault()) }
     val grouped = remember(media) { media.groupBy { format.format(Date(it.dateTakenMs)) } }
+    val orderedIds = remember(media) { media.map { it.id } }
+    val gridState = rememberLazyGridState()
+    val scope = rememberCoroutineScope()
+    val latestSelected by rememberUpdatedState(selected)
+    val latestSelectionSet by rememberUpdatedState(onSelectionSet)
+    var dragAnchor by remember { mutableStateOf<Long?>(null) }
+    var dragBase by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var dragSelect by remember { mutableStateOf(true) }
+
+    fun mediaAt(x: Float, y: Float): Long? = gridState.layoutInfo.visibleItemsInfo
+        .lastOrNull { info ->
+            info.key is Long && x >= info.offset.x && x <= info.offset.x + info.size.width &&
+                y >= info.offset.y && y <= info.offset.y + info.size.height
+        }?.key as? Long
+
+    fun updateSlideSelection(current: Long) {
+        val anchor = dragAnchor ?: return
+        latestSelectionSet(GalleryLogic.slideSelection(orderedIds, dragBase, anchor, current, dragSelect))
+    }
+
     LazyVerticalGrid(
-        columns = GridCells.Fixed(4),
+        state = gridState,
+        columns = GridCells.Fixed(gridColumns),
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(1.5.dp),
         verticalArrangement = Arrangement.spacedBy(1.5.dp),
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().pointerInput(media) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                val longPress = awaitLongPressOrCancellation(down.id) ?: return@awaitEachGesture
+                mediaAt(longPress.position.x, longPress.position.y)?.let { id ->
+                    dragAnchor = id
+                    dragBase = latestSelected
+                    dragSelect = id !in latestSelected
+                    updateSlideSelection(id)
+                }
+                while (true) {
+                    val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                    if (!change.pressed) break
+                    change.consume()
+                    val viewportHeight = gridState.layoutInfo.viewportSize.height.toFloat()
+                    when {
+                        change.position.y < 88f -> scope.launch { gridState.scrollBy(-30f) }
+                        change.position.y > viewportHeight - 88f -> scope.launch { gridState.scrollBy(30f) }
+                    }
+                    mediaAt(change.position.x, change.position.y)?.let(::updateSlideSelection)
+                }
+                dragAnchor = null
+            }
+        },
     ) {
         grouped.forEach { (date, items) ->
             item(span = { GridItemSpan(maxLineSpan) }, key = "date-$date") {
@@ -413,7 +536,8 @@ private fun TimelineGrid(media: List<GalleryMedia>, selected: Set<Long>, onOpen:
 private fun MediaTile(item: GalleryMedia, selected: Boolean, onOpen: (GalleryMedia) -> Unit, onSelect: (Long) -> Unit) {
     Box(
         Modifier.aspectRatio(1f).clip(RoundedCornerShape(1.dp)).background(VaultSurface)
-            .combinedClickable(onClick = { onOpen(item) }, onLongClick = { onSelect(item.id) }),
+            .semantics { onLongClick("Select") { onSelect(item.id); true } }
+            .clickable(onClick = { onOpen(item) }),
     ) {
         AsyncImage(item.uri, item.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         if (item.kind == MediaKind.VIDEO) {
@@ -436,9 +560,11 @@ private fun MediaTile(item: GalleryMedia, selected: Boolean, onOpen: (GalleryMed
 
 @Composable
 private fun AlbumsScreen(albums: List<GalleryAlbum>, onViewAll: () -> Unit, onOpen: (GalleryAlbum) -> Unit, onSettings: () -> Unit) {
+    val context = LocalContext.current
+    val showEssential = context.getSharedPreferences("gallery-settings", 0).getBoolean("essential", true)
     Column(Modifier.fillMaxSize()) {
-        GalleryToolbar(extra = { IconButton(onClick = onViewAll) { Icon(Icons.Outlined.Search, "View all albums") }; IconButton(onClick = onSettings) { Icon(Icons.Outlined.MoreVert, "Album settings") } })
-        Card(
+        GalleryToolbar(extra = { IconButton(onClick = onViewAll) { Icon(Icons.Outlined.GridView, "View all albums") }; IconButton(onClick = onSettings) { Icon(Icons.Outlined.MoreVert, "Album settings") } })
+        if (showEssential) Card(
             colors = CardDefaults.cardColors(containerColor = VaultSurface),
             shape = RoundedCornerShape(26.dp),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
@@ -452,10 +578,10 @@ private fun AlbumsScreen(albums: List<GalleryAlbum>, onViewAll: () -> Unit, onOp
             }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Essential albums", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+            Text(if (showEssential) "Essential albums" else "All albums", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
             TextButton(onClick = onViewAll) { Text("View all") }
         }
-        AlbumGrid(albums.take(12), onOpen)
+        AlbumGrid(if (showEssential) albums.take(12) else albums, onOpen)
     }
 }
 
@@ -488,34 +614,159 @@ private fun AlbumGrid(albums: List<GalleryAlbum>, onOpen: (GalleryAlbum) -> Unit
 }
 
 @Composable
-private fun MediaGridScreen(title: String, media: List<GalleryMedia>, selected: Set<Long>, onBack: () -> Unit, onSearch: () -> Unit, onOpen: (GalleryMedia) -> Unit, onSelect: (Long) -> Unit) {
+private fun MediaGridScreen(
+    title: String,
+    media: List<GalleryMedia>,
+    selected: Set<Long>,
+    query: String,
+    searchOpen: Boolean,
+    onBack: () -> Unit,
+    onSearch: () -> Unit,
+    onQuery: (String) -> Unit,
+    onOpen: (GalleryMedia) -> Unit,
+    onSelect: (Long) -> Unit,
+    onSelectionSet: (Set<Long>) -> Unit,
+) {
     Column(Modifier.fillMaxSize()) {
         GalleryToolbar(title, onBack, onSearch)
-        if (media.isEmpty()) EmptyGallery() else LazyVerticalGrid(
-            columns = GridCells.Fixed(4),
-            horizontalArrangement = Arrangement.spacedBy(1.5.dp),
-            verticalArrangement = Arrangement.spacedBy(1.5.dp),
-            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
-        ) { items(media, key = { it.id }) { MediaTile(it, it.id in selected, onOpen, onSelect) } }
+        AnimatedVisibility(searchOpen) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQuery,
+                label = { Text("Search this album") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
+        if (media.isEmpty()) EmptyGallery() else SlideSelectableMediaGrid(media, selected, onOpen, onSelect, onSelectionSet)
     }
 }
 
 @Composable
-private fun StoriesScreen() {
+private fun SlideSelectableMediaGrid(
+    media: List<GalleryMedia>,
+    selected: Set<Long>,
+    onOpen: (GalleryMedia) -> Unit,
+    onSelect: (Long) -> Unit,
+    onSelectionSet: (Set<Long>) -> Unit,
+) {
+    val context = LocalContext.current
+    val gridColumns = context.getSharedPreferences("gallery-settings", 0).getInt("grid_columns", 4).coerceIn(3, 5)
+    val gridState = rememberLazyGridState()
+    val orderedIds = remember(media) { media.map { it.id } }
+    val scope = rememberCoroutineScope()
+    val latestSelected by rememberUpdatedState(selected)
+    val latestSelectionSet by rememberUpdatedState(onSelectionSet)
+    var dragAnchor by remember { mutableStateOf<Long?>(null) }
+    var dragBase by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var dragSelect by remember { mutableStateOf(true) }
+
+    fun mediaAt(x: Float, y: Float): Long? = gridState.layoutInfo.visibleItemsInfo
+        .lastOrNull { info ->
+            info.key is Long && x >= info.offset.x && x <= info.offset.x + info.size.width &&
+                y >= info.offset.y && y <= info.offset.y + info.size.height
+        }?.key as? Long
+
+    fun updateSlideSelection(current: Long) {
+        val anchor = dragAnchor ?: return
+        latestSelectionSet(GalleryLogic.slideSelection(orderedIds, dragBase, anchor, current, dragSelect))
+    }
+
+    LazyVerticalGrid(
+        state = gridState,
+        columns = GridCells.Fixed(gridColumns),
+        horizontalArrangement = Arrangement.spacedBy(1.5.dp),
+        verticalArrangement = Arrangement.spacedBy(1.5.dp),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp).pointerInput(media) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                val longPress = awaitLongPressOrCancellation(down.id) ?: return@awaitEachGesture
+                mediaAt(longPress.position.x, longPress.position.y)?.let { id ->
+                    dragAnchor = id
+                    dragBase = latestSelected
+                    dragSelect = id !in latestSelected
+                    updateSlideSelection(id)
+                }
+                while (true) {
+                    val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                    if (!change.pressed) break
+                    change.consume()
+                    val viewportHeight = gridState.layoutInfo.viewportSize.height.toFloat()
+                    when {
+                        change.position.y < 88f -> scope.launch { gridState.scrollBy(-30f) }
+                        change.position.y > viewportHeight - 88f -> scope.launch { gridState.scrollBy(30f) }
+                    }
+                    mediaAt(change.position.x, change.position.y)?.let(::updateSlideSelection)
+                }
+                dragAnchor = null
+            }
+        },
+    ) { items(media, key = { it.id }) { MediaTile(it, it.id in selected, onOpen, onSelect) } }
+}
+
+@Composable
+private fun StoriesScreen(media: List<GalleryMedia>, onOpen: (List<GalleryMedia>) -> Unit) {
+    val format = remember { SimpleDateFormat("MMMM yyyy", Locale.getDefault()) }
+    val stories = remember(media) {
+        media.filter { it.kind == MediaKind.IMAGE }
+            .groupBy { format.format(Date(it.dateTakenMs)) }
+            .entries.map { it.key to it.value }.filter { it.second.size >= 2 }
+    }
     Column(Modifier.fillMaxSize()) {
         GalleryToolbar()
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        if (stories.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 42.dp)) {
                 Text("No stories", style = MaterialTheme.typography.headlineMedium, color = VaultSecondary)
                 Spacer(Modifier.height(14.dp))
-                Text("Your locally created story collections will appear here.", textAlign = TextAlign.Center, color = VaultSecondary)
+                Text("Stories appear automatically when a month has at least two photos.", textAlign = TextAlign.Center, color = VaultSecondary)
+            }
+        } else LazyVerticalGrid(
+            columns = GridCells.Adaptive(150.dp),
+            contentPadding = PaddingValues(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            items(stories, key = { it.first }) { (title, items) ->
+                Column(Modifier.combinedClickable(onClick = { onOpen(items) }, onLongClick = { onOpen(items) })) {
+                    AsyncImage(items.first().uri, title, Modifier.fillMaxWidth().aspectRatio(0.82f).clip(RoundedCornerShape(22.dp)), contentScale = ContentScale.Crop)
+                    Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+                    Text("${items.size} photos", color = VaultSecondary)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun MenuScreen(onVideos: () -> Unit, onRecent: () -> Unit, onFavourites: () -> Unit, onSettings: () -> Unit, onSecure: () -> Unit) {
+private fun StoryViewer(items: List<GalleryMedia>, onBack: () -> Unit) {
+    var index by remember(items) { mutableStateOf(0) }
+    LaunchedEffect(index, items) {
+        delay(3_500)
+        if (index < items.lastIndex) index++ else onBack()
+    }
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        AsyncImage(items[index].uri, items[index].name, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") }
+            Text("${index + 1} / ${items.size}", modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+            Spacer(Modifier.width(48.dp))
+        }
+        Row(Modifier.fillMaxSize().padding(top = 96.dp, bottom = 48.dp)) {
+            Box(Modifier.weight(1f).fillMaxHeight().combinedClickable(onClick = { if (index > 0) index-- }, onLongClick = {}))
+            Box(Modifier.weight(1f).fillMaxHeight().combinedClickable(onClick = { if (index < items.lastIndex) index++ else onBack() }, onLongClick = {}))
+        }
+    }
+}
+
+@Composable
+private fun MenuScreen(
+    onVideos: () -> Unit,
+    onRecent: () -> Unit,
+    onFavourites: () -> Unit,
+    onSettings: () -> Unit,
+    onTrash: () -> Unit,
+    onSecure: () -> Unit,
+) {
     Column(Modifier.fillMaxSize()) {
         GalleryToolbar()
         Spacer(Modifier.weight(1f))
@@ -530,6 +781,7 @@ private fun MenuScreen(onVideos: () -> Unit, onRecent: () -> Unit, onFavourites:
                     MenuAction(Icons.Outlined.Today, "Recent", onRecent)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    MenuAction(Icons.Outlined.Delete, "Recycle bin", onTrash)
                     MenuAction(Icons.Outlined.Settings, "Settings", onSettings)
                     MenuAction(Icons.Outlined.Lock, "Secure Gallery", onSecure)
                 }
@@ -568,12 +820,18 @@ private fun NavItem(icon: androidx.compose.ui.graphics.vector.ImageVector, label
 }
 
 @Composable
-private fun SelectionBar(count: Int, onShare: () -> Unit, onSecure: () -> Unit, onDelete: () -> Unit, onCancel: () -> Unit) {
+private fun SelectionBar(
+    onShare: () -> Unit,
+    onSecure: () -> Unit,
+    favouriteLabel: String,
+    onFavourite: () -> Unit,
+    onDelete: () -> Unit,
+) {
     Row(Modifier.fillMaxWidth().height(82.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceAround) {
         BottomAction(Icons.Outlined.Share, "Share", onShare)
         BottomAction(Icons.Outlined.Lock, "Secure", onSecure)
-        BottomAction(Icons.Outlined.Delete, "Delete", onDelete)
-        BottomAction(Icons.Outlined.MoreVert, "Cancel ($count)", onCancel)
+        BottomAction(Icons.Outlined.Favorite, favouriteLabel, onFavourite)
+        BottomAction(Icons.Outlined.Delete, "Trash", onDelete)
     }
 }
 
@@ -588,13 +846,10 @@ private fun BottomAction(icon: androidx.compose.ui.graphics.vector.ImageVector, 
 private fun GallerySettings(onBack: () -> Unit) {
     val context = LocalContext.current
     val preferences = remember { context.getSharedPreferences("gallery-settings", 0) }
-    var fullScroll by remember { mutableStateOf(preferences.getBoolean("full_scroll", false)) }
-    var autoplay by remember { mutableStateOf(preferences.getBoolean("autoplay", true)) }
     var externalPlayer by remember { mutableStateOf(preferences.getBoolean("external_player", false)) }
-    var stories by remember { mutableStateOf(preferences.getBoolean("stories", true)) }
-    var notifications by remember { mutableStateOf(preferences.getBoolean("notifications", true)) }
     var essential by remember { mutableStateOf(preferences.getBoolean("essential", true)) }
-    var merge by remember { mutableStateOf(preferences.getBoolean("merge", false)) }
+    var gridColumns by remember { mutableStateOf(preferences.getInt("grid_columns", 4).coerceIn(3, 5)) }
+    var secureLauncher by remember { mutableStateOf(isSecureLauncherVisible(context)) }
     var dialog by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize()) {
         GalleryToolbar("Gallery settings", onBack)
@@ -602,28 +857,28 @@ private fun GallerySettings(onBack: () -> Unit) {
             Column(Modifier.fillMaxSize().padding(horizontal = 10.dp).verticalScroll(scroll), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SettingsHeader("Viewing")
                 SettingsGroup {
-                    SettingSwitch("Full screen scrolling", fullScroll) { fullScroll = it; preferences.edit().putBoolean("full_scroll", it).apply() }
-                    SettingSwitch("Auto play motion photos", autoplay) { autoplay = it; preferences.edit().putBoolean("autoplay", it).apply() }
+                    SettingLink("Grid size: $gridColumns columns") {
+                        gridColumns = if (gridColumns == 5) 3 else gridColumns + 1
+                        preferences.edit().putInt("grid_columns", gridColumns).apply()
+                    }
                     SettingSwitch("Open in video player", externalPlayer) { externalPlayer = it; preferences.edit().putBoolean("external_player", it).apply() }
-                }
-                SettingsHeader("Stories")
-                SettingsGroup {
-                    SettingSwitch("Auto create stories", stories) { stories = it; preferences.edit().putBoolean("stories", it).apply() }
-                    SettingSwitch("Notifications", notifications) { notifications = it; preferences.edit().putBoolean("notifications", it).apply() }
                 }
                 SettingsHeader("Albums")
                 SettingsGroup {
                     SettingSwitch("Select essential albums", essential) { essential = it; preferences.edit().putBoolean("essential", it).apply() }
-                    SettingSwitch("Merge albums", merge) { merge = it; preferences.edit().putBoolean("merge", it).apply() }
                 }
                 SettingsHeader("Privacy")
                 SettingsGroup {
+                    SettingSwitch("Show Secure Gallery icon", secureLauncher) {
+                        secureLauncher = it
+                        setSecureLauncherVisible(context, it)
+                    }
                     SettingLink("Privacy Policy") { dialog = "Vault Gallery processes media locally and does not upload it by default. Secure Gallery exports plaintext only after your explicit action." }
                     SettingLink("Permissions") {
                         context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${context.packageName}".toUri()))
                     }
                 }
-                SettingsGroup { SettingLink("About Gallery") { dialog = "Vault Gallery 1.0\nLocal media browser and application-level encrypted gallery." } }
+                SettingsGroup { SettingLink("About Gallery") { dialog = "Vault Gallery 1.1\nA local-first Pixel gallery with Samsung-style selection and application-level encrypted Secure Gallery." } }
                 Spacer(Modifier.height(22.dp))
             }
         }
@@ -655,7 +910,15 @@ private fun SettingLink(title: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun PublicViewer(media: GalleryMedia, onBack: () -> Unit, onShare: () -> Unit, onSecure: () -> Unit, onDelete: () -> Unit) {
+private fun PublicViewer(
+    media: GalleryMedia,
+    onBack: () -> Unit,
+    onShare: () -> Unit,
+    onSecure: () -> Unit,
+    onFavourite: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    var deletePrompt by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (media.kind == MediaKind.VIDEO) PublicVideo(media.uri) else ZoomableImage(media.uri, media.name)
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -665,9 +928,63 @@ private fun PublicViewer(media: GalleryMedia, onBack: () -> Unit, onShare: () ->
         Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().background(Color(0xCC111113)).padding(10.dp), horizontalArrangement = Arrangement.SpaceAround) {
             BottomAction(Icons.Outlined.Share, "Share", onShare)
             BottomAction(Icons.Outlined.Lock, "Secure", onSecure)
-            BottomAction(Icons.Outlined.Delete, "Delete", onDelete)
+            BottomAction(Icons.Outlined.Favorite, if (media.isFavourite) "Unfavourite" else "Favourite", onFavourite)
+            BottomAction(Icons.Outlined.Delete, "Trash", { deletePrompt = true })
         }
     }
+    if (deletePrompt) AlertDialog(
+        onDismissRequest = { deletePrompt = false },
+        title = { Text("Move to recycle bin?") },
+        text = { Text("Android keeps the item in the system recycle bin so you can restore it later.") },
+        dismissButton = { TextButton(onClick = { deletePrompt = false }) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = { deletePrompt = false; onDelete() }) { Text("Move to bin") } },
+    )
+}
+
+@Composable
+private fun PublicTrashScreen(
+    media: List<GalleryMedia>,
+    onBack: () -> Unit,
+    onRestore: (GalleryMedia) -> Unit,
+    onDelete: (GalleryMedia) -> Unit,
+    onEmpty: () -> Unit,
+) {
+    var selected by remember { mutableStateOf<GalleryMedia?>(null) }
+    var emptyPrompt by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize()) {
+        GalleryToolbar(
+            title = "Recycle bin",
+            back = onBack,
+            extra = { if (media.isNotEmpty()) TextButton(onClick = { emptyPrompt = true }) { Text("Empty") } },
+        )
+        Text("Items remain here according to Android's system recycle-bin policy.", color = VaultSecondary, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        if (media.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Recycle bin is empty", color = VaultSecondary) }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(4),
+                contentPadding = PaddingValues(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) { items(media, key = { it.id }) { item -> MediaTile(item, false, { selected = it }, {}) } }
+        }
+    }
+    selected?.let { item ->
+        AlertDialog(
+            onDismissRequest = { selected = null },
+            title = { Text(item.name) },
+            text = { Text("Restore this item or delete it permanently?") },
+            dismissButton = { TextButton(onClick = { selected = null; onDelete(item) }) { Text("Delete permanently", color = MaterialTheme.colorScheme.error) } },
+            confirmButton = { TextButton(onClick = { selected = null; onRestore(item) }) { Text("Restore") } },
+        )
+    }
+    if (emptyPrompt) AlertDialog(
+        onDismissRequest = { emptyPrompt = false },
+        title = { Text("Empty recycle bin?") },
+        text = { Text("All ${media.size} items will be permanently deleted. This cannot be undone.") },
+        dismissButton = { TextButton(onClick = { emptyPrompt = false }) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = { emptyPrompt = false; onEmpty() }) { Text("Delete all", color = MaterialTheme.colorScheme.error) } },
+    )
 }
 
 @Composable
