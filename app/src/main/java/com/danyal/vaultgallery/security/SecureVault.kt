@@ -140,7 +140,10 @@ class SecureVault(private val context: Context) {
             .setUserAuthenticationRequired(true)
             .setInvalidatedByBiometricEnrollment(true)
         if (android.os.Build.VERSION.SDK_INT >= 30) {
-            builder.setUserAuthenticationParameters(BIOMETRIC_AUTH_WINDOW_SECONDS, KeyProperties.AUTH_BIOMETRIC_STRONG)
+            builder.setUserAuthenticationParameters(
+                BIOMETRIC_AUTH_WINDOW_SECONDS,
+                KeyProperties.AUTH_BIOMETRIC_STRONG or KeyProperties.AUTH_DEVICE_CREDENTIAL,
+            )
         } else {
             @Suppress("DEPRECATION")
             builder.setUserAuthenticationValidityDurationSeconds(BIOMETRIC_AUTH_WINDOW_SECONDS)

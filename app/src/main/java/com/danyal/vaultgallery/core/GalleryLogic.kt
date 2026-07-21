@@ -5,6 +5,13 @@ import java.util.Date
 import java.util.Locale
 
 object GalleryLogic {
+    fun fileSizeLabel(bytes: Long): String = when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024L * 1024 -> "%.1f KB".format(Locale.ROOT, bytes / 1024.0)
+        bytes < 1024L * 1024 * 1024 -> "%.1f MB".format(Locale.ROOT, bytes / (1024.0 * 1024.0))
+        else -> "%.1f GB".format(Locale.ROOT, bytes / (1024.0 * 1024.0 * 1024.0))
+    }
+
     fun durationLabel(durationMs: Long): String {
         val seconds = (durationMs / 1000).coerceAtLeast(0)
         return "%d:%02d".format(Locale.ROOT, seconds / 60, seconds % 60)

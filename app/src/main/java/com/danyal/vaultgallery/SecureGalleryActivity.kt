@@ -108,7 +108,6 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.PlayerView
 import com.danyal.vaultgallery.security.SecureItem
 import com.danyal.vaultgallery.ui.VaultBackground
-import com.danyal.vaultgallery.ui.VaultOrange
 import com.danyal.vaultgallery.ui.VaultPrimary
 import com.danyal.vaultgallery.ui.VaultRaised
 import com.danyal.vaultgallery.ui.VaultSecondary
@@ -170,14 +169,6 @@ class SecureGalleryActivity : FragmentActivity() {
                         onBiometricUnlock = { showBiometricPrompt(enrollment = false) },
                         onBiometricEnrollment = { showBiometricPrompt(enrollment = true) },
                     )
-                    if (BuildConfig.DEBUG) {
-                        Text(
-                            "DEBUG",
-                            color = VaultOrange,
-                            style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 2.dp),
-                        )
-                    }
                 }
             }
         }
@@ -208,9 +199,15 @@ class SecureGalleryActivity : FragmentActivity() {
         biometricInProgress = true
         val info = BiometricPrompt.PromptInfo.Builder()
             .setTitle(if (enrollment) "Enable biometric unlock" else "Unlock Secure Gallery")
-            .setSubtitle(if (enrollment) "Confirm your identity to protect the vault key" else "Use your fingerprint or face")
-            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
-            .setNegativeButtonText(if (enrollment) "Not now" else "Use PIN")
+            .setSubtitle(if (enrollment) "Confirm your identity to protect the vault key" else "Use biometrics or your device screen lock")
+            .apply {
+                if (enrollment || Build.VERSION.SDK_INT < 30) {
+                    setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                    setNegativeButtonText(if (enrollment) "Not now" else "Use vault PIN")
+                } else {
+                    setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+                }
+            }
             .build()
         biometricPrompt.authenticate(info)
     }

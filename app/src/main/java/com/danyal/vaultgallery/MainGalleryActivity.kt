@@ -55,22 +55,31 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Brush
+import androidx.compose.material.icons.outlined.CleaningServices
 import androidx.compose.material.icons.outlined.Collections
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Favorite
+import androidx.compose.material.icons.outlined.FolderShared
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.PermMedia
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Slideshow
 import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material3.AlertDialog
@@ -79,6 +88,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -126,10 +137,10 @@ import com.danyal.vaultgallery.data.MediaKind
 import com.danyal.vaultgallery.data.MediaStoreRepository
 import com.danyal.vaultgallery.ui.VaultBackground
 import com.danyal.vaultgallery.ui.VaultBlue
-import com.danyal.vaultgallery.ui.VaultOrange
 import com.danyal.vaultgallery.ui.VaultPrimary
 import com.danyal.vaultgallery.ui.VaultRaised
 import com.danyal.vaultgallery.ui.VaultSecondary
+import com.danyal.vaultgallery.ui.VaultSecure
 import com.danyal.vaultgallery.ui.VaultSurface
 import com.danyal.vaultgallery.ui.VaultTheme
 import java.text.SimpleDateFormat
@@ -190,6 +201,7 @@ class MainGalleryActivity : ComponentActivity() {
 }
 
 private enum class PublicTab { PICTURES, ALBUMS, STORIES, MENU }
+private enum class AuxiliaryScreen { SEARCH, VIDEOS, RECENT, FAVOURITES, CLEAN_OUT, LOCATIONS, SHARED_ALBUMS }
 
 @Composable
 private fun PublicGalleryApp(viewModel: GalleryViewModel, activity: MainGalleryActivity) {
@@ -204,18 +216,20 @@ private fun PublicGalleryApp(viewModel: GalleryViewModel, activity: MainGalleryA
     var kindFilter by remember { mutableStateOf<MediaKind?>(null) }
     var favouriteOnly by remember { mutableStateOf(false) }
     var trashOpen by remember { mutableStateOf(false) }
+    var auxiliaryScreen by remember { mutableStateOf<AuxiliaryScreen?>(null) }
     var storyItems by remember { mutableStateOf<List<GalleryMedia>?>(null) }
     val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { viewModel.refresh() }
 
     LaunchedEffect(Unit) { viewModel.refresh() }
-    BackHandler(viewer != null || storyItems != null || settings || trashOpen || allAlbums || albumFilter != null || state.selectedIds.isNotEmpty()) {
+    BackHandler(viewer != null || storyItems != null || settings || trashOpen || auxiliaryScreen != null || allAlbums || albumFilter != null || state.selectedIds.isNotEmpty()) {
         when {
             viewer != null -> viewer = null
             storyItems != null -> storyItems = null
             settings -> settings = false
             trashOpen -> trashOpen = false
+            auxiliaryScreen != null -> auxiliaryScreen = null
             allAlbums -> allAlbums = false
             albumFilter != null -> albumFilter = null
             state.selectedIds.isNotEmpty() -> viewModel.clearSelection()
@@ -249,6 +263,19 @@ private fun PublicGalleryApp(viewModel: GalleryViewModel, activity: MainGalleryA
             onDelete = { activity.deletePermanently(listOf(it.uri)) },
             onEmpty = { activity.deletePermanently(state.trash.map { it.uri }) },
         )
+        return
+    }
+
+    if (auxiliaryScreen != null) {
+        when (auxiliaryScreen!!) {
+            AuxiliaryScreen.SEARCH -> GallerySearchScreen(state.media, onBack = { auxiliaryScreen = null }, onOpen = { viewer = it })
+            AuxiliaryScreen.VIDEOS -> SamsungCollectionScreen("Videos", state.media.filter { it.kind == MediaKind.VIDEO }, onBack = { auxiliaryScreen = null }, onOpen = { viewer = it })
+            AuxiliaryScreen.RECENT -> SamsungCollectionScreen("Recent", state.media, onBack = { auxiliaryScreen = null }, onOpen = { viewer = it })
+            AuxiliaryScreen.FAVOURITES -> SamsungCollectionScreen("Favourites", state.media.filter { it.isFavourite }, onBack = { auxiliaryScreen = null }, onOpen = { viewer = it })
+            AuxiliaryScreen.CLEAN_OUT -> CleanOutScreen(state.media, onBack = { auxiliaryScreen = null })
+            AuxiliaryScreen.LOCATIONS -> LocationsScreen(state.media, onBack = { auxiliaryScreen = null }, onOpen = { viewer = it })
+            AuxiliaryScreen.SHARED_ALBUMS -> SharedAlbumsScreen(onBack = { auxiliaryScreen = null })
+        }
         return
     }
 
@@ -318,7 +345,7 @@ private fun PublicGalleryApp(viewModel: GalleryViewModel, activity: MainGalleryA
                     query = query,
                     searchOpen = searchOpen,
                     onQuery = { query = it },
-                    onSearch = { searchOpen = !searchOpen },
+                    onSearch = { auxiliaryScreen = AuxiliaryScreen.SEARCH },
                     onOpen = {
                         if (state.selectedIds.isNotEmpty()) viewModel.toggleSelection(it.id)
                         else if (it.kind == MediaKind.VIDEO && activity.getSharedPreferences("gallery-settings", 0).getBoolean("external_player", false)) {
@@ -338,20 +365,15 @@ private fun PublicGalleryApp(viewModel: GalleryViewModel, activity: MainGalleryA
                 )
                 tab == PublicTab.STORIES -> StoriesScreen(state.media) { storyItems = it }
                 else -> MenuScreen(
-                    onVideos = { query = ""; kindFilter = MediaKind.VIDEO; favouriteOnly = false; tab = PublicTab.PICTURES },
-                    onRecent = { kindFilter = null; favouriteOnly = false; tab = PublicTab.PICTURES },
-                    onFavourites = { query = ""; kindFilter = null; favouriteOnly = true; tab = PublicTab.PICTURES },
+                    onVideos = { auxiliaryScreen = AuxiliaryScreen.VIDEOS },
+                    onRecent = { auxiliaryScreen = AuxiliaryScreen.RECENT },
+                    onFavourites = { auxiliaryScreen = AuxiliaryScreen.FAVOURITES },
+                    onCleanOut = { auxiliaryScreen = AuxiliaryScreen.CLEAN_OUT },
+                    onLocations = { auxiliaryScreen = AuxiliaryScreen.LOCATIONS },
+                    onSharedAlbums = { auxiliaryScreen = AuxiliaryScreen.SHARED_ALBUMS },
                     onSettings = { settings = true },
                     onTrash = { trashOpen = true },
                     onSecure = { activity.startActivity(Intent(activity, SecureGalleryActivity::class.java)) },
-                )
-            }
-            if (BuildConfig.DEBUG) {
-                Text(
-                    "DEBUG",
-                    color = VaultOrange,
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 2.dp),
                 )
             }
         }
@@ -400,6 +422,7 @@ private fun GalleryToolbar(
     title: String? = null,
     back: (() -> Unit)? = null,
     onSearch: (() -> Unit)? = null,
+    beforeSearch: @Composable (() -> Unit)? = null,
     extra: @Composable (() -> Unit)? = null,
 ) {
     Row(
@@ -408,8 +431,9 @@ private fun GalleryToolbar(
     ) {
         if (back != null) IconButton(onClick = back) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") }
         if (title != null) Text(title, style = MaterialTheme.typography.headlineLarge, modifier = Modifier.weight(1f)) else Spacer(Modifier.weight(1f))
-        extra?.invoke()
+        beforeSearch?.invoke()
         if (onSearch != null) IconButton(onClick = onSearch) { Icon(Icons.Outlined.Search, "Search") }
+        extra?.invoke()
     }
 }
 
@@ -419,6 +443,9 @@ private fun PicturesScreen(
     onQuery: (String) -> Unit, onSearch: () -> Unit, onOpen: (GalleryMedia) -> Unit,
     onSelect: (Long) -> Unit, onSelectionSet: (Set<Long>) -> Unit, onSelectAll: () -> Unit, onRefresh: () -> Unit,
 ) {
+    var moreMenu by remember { mutableStateOf(false) }
+    var createMenu by remember { mutableStateOf(false) }
+    var slideshow by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         if (selected.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().statusBarsPadding().height(92.dp).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -429,8 +456,17 @@ private fun PicturesScreen(
         } else {
             GalleryToolbar(
                 onSearch = onSearch,
+                beforeSearch = { IconButton(onClick = onRefresh) { Icon(Icons.Outlined.Collections, "Change layout") } },
                 extra = {
-                    IconButton(onClick = onRefresh) { Icon(Icons.Outlined.GridView, "Refresh layout") }
+                    Box {
+                        IconButton(onClick = { moreMenu = true }) { Icon(Icons.Outlined.MoreVert, "More options") }
+                        DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
+                            DropdownMenuItem(text = { Text("Select") }, onClick = { moreMenu = false; media.firstOrNull()?.let { onSelect(it.id) } })
+                            DropdownMenuItem(text = { Text("Create") }, onClick = { moreMenu = false; createMenu = true })
+                            DropdownMenuItem(text = { Text("Start slideshow") }, onClick = { moreMenu = false; slideshow = true })
+                            DropdownMenuItem(text = { Text("View duplicates") }, onClick = { moreMenu = false })
+                        }
+                    }
                 },
             )
         }
@@ -447,6 +483,19 @@ private fun PicturesScreen(
         else if (media.isEmpty()) EmptyGallery()
         else TimelineGrid(media, selected, onOpen, onSelect, onSelectionSet)
     }
+    if (createMenu) AlertDialog(
+        onDismissRequest = { createMenu = false },
+        title = { Text("Create") },
+        text = {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                MenuAction(Icons.Outlined.AutoAwesome, "GIF", { createMenu = false })
+                MenuAction(Icons.Outlined.GridView, "Collage", { createMenu = false })
+                MenuAction(Icons.Outlined.Movie, "Movie", { createMenu = false })
+            }
+        },
+        confirmButton = { TextButton(onClick = { createMenu = false }) { Text("Cancel") } },
+    )
+    if (slideshow && media.isNotEmpty()) StoryViewer(media, onBack = { slideshow = false })
 }
 
 @Composable
@@ -562,8 +611,21 @@ private fun MediaTile(item: GalleryMedia, selected: Boolean, onOpen: (GalleryMed
 private fun AlbumsScreen(albums: List<GalleryAlbum>, onViewAll: () -> Unit, onOpen: (GalleryAlbum) -> Unit, onSettings: () -> Unit) {
     val context = LocalContext.current
     val showEssential = context.getSharedPreferences("gallery-settings", 0).getBoolean("essential", true)
+    var menu by remember { mutableStateOf(false) }
+    var create by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
-        GalleryToolbar(extra = { IconButton(onClick = onViewAll) { Icon(Icons.Outlined.GridView, "View all albums") }; IconButton(onClick = onSettings) { Icon(Icons.Outlined.MoreVert, "Album settings") } })
+        GalleryToolbar(extra = {
+            IconButton(onClick = { create = true }) { Icon(Icons.Outlined.Add, "Create") }
+            IconButton(onClick = onViewAll) { Icon(Icons.Outlined.Search, "Search") }
+            Box {
+                IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "More options") }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(text = { Text("Select") }, onClick = { menu = false })
+                    DropdownMenuItem(text = { Text("Select essential albums") }, onClick = { menu = false; onSettings() })
+                    DropdownMenuItem(text = { Text("Hide albums") }, onClick = { menu = false })
+                }
+            }
+        })
         if (showEssential) Card(
             colors = CardDefaults.cardColors(containerColor = VaultSurface),
             shape = RoundedCornerShape(26.dp),
@@ -583,6 +645,12 @@ private fun AlbumsScreen(albums: List<GalleryAlbum>, onViewAll: () -> Unit, onOp
         }
         AlbumGrid(if (showEssential) albums.take(12) else albums, onOpen)
     }
+    if (create) AlertDialog(
+        onDismissRequest = { create = false },
+        title = { Text("Choose what to create") },
+        text = { Text("Album\nCreate a new album and add pictures and videos manually.\n\nAuto-updating album\nAutomatically include pictures of people you select.\n\nGroup\nCreate a group of related albums.\n\nShared album\nCreate an album you can share.\n\nShared family album\nShare with your family through Android's share providers.") },
+        confirmButton = { TextButton(onClick = { create = false }) { Text("Done") } },
+    )
 }
 
 @Composable
@@ -706,6 +774,7 @@ private fun SlideSelectableMediaGrid(
 
 @Composable
 private fun StoriesScreen(media: List<GalleryMedia>, onOpen: (List<GalleryMedia>) -> Unit) {
+    var menu by remember { mutableStateOf(false) }
     val format = remember { SimpleDateFormat("MMMM yyyy", Locale.getDefault()) }
     val stories = remember(media) {
         media.filter { it.kind == MediaKind.IMAGE }
@@ -713,12 +782,23 @@ private fun StoriesScreen(media: List<GalleryMedia>, onOpen: (List<GalleryMedia>
             .entries.map { it.key to it.value }.filter { it.second.size >= 2 }
     }
     Column(Modifier.fillMaxSize()) {
-        GalleryToolbar()
+        GalleryToolbar(
+            onSearch = {},
+            extra = {
+                Box {
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "More options") }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("Create story") }, onClick = { menu = false })
+                        DropdownMenuItem(text = { Text("Hide content") }, onClick = { menu = false })
+                    }
+                }
+            },
+        )
         if (stories.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 42.dp)) {
                 Text("No stories", style = MaterialTheme.typography.headlineMedium, color = VaultSecondary)
                 Spacer(Modifier.height(14.dp))
-                Text("Stories appear automatically when a month has at least two photos.", textAlign = TextAlign.Center, color = VaultSecondary)
+                Text("Experience your adventures again in curated collections automatically made from your pictures and videos.", textAlign = TextAlign.Center, color = VaultSecondary)
             }
         } else LazyVerticalGrid(
             columns = GridCells.Adaptive(150.dp),
@@ -759,10 +839,181 @@ private fun StoryViewer(items: List<GalleryMedia>, onBack: () -> Unit) {
 }
 
 @Composable
+private fun SamsungCollectionScreen(title: String, media: List<GalleryMedia>, onBack: () -> Unit, onOpen: (GalleryMedia) -> Unit) {
+    var menu by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize()) {
+        GalleryToolbar(
+            title = title,
+            back = onBack,
+            extra = {
+                Box {
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "More options") }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("Select") }, onClick = { menu = false })
+                        DropdownMenuItem(text = { Text("Create") }, onClick = { menu = false })
+                        DropdownMenuItem(text = { Text("Add to Home screen") }, onClick = { menu = false })
+                        DropdownMenuItem(text = { Text("Start slideshow") }, onClick = { menu = false })
+                    }
+                }
+            },
+        )
+        if (media.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(Icons.Outlined.Favorite, null, Modifier.size(52.dp), tint = VaultSecondary)
+                    Text(if (title == "Favourites") "No favourites" else "No pictures or videos", style = MaterialTheme.typography.titleLarge)
+                    Text(if (title == "Favourites") "Tap the heart on your favourite shots so you can find them here fast." else "New media will appear here automatically.", color = VaultSecondary, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 36.dp))
+                }
+            }
+        } else {
+            Text("${media.count { it.kind == MediaKind.IMAGE }} images  ${media.count { it.kind == MediaKind.VIDEO }} videos", color = VaultSecondary, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(4),
+                horizontalArrangement = Arrangement.spacedBy(1.dp),
+                verticalArrangement = Arrangement.spacedBy(1.dp),
+                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+            ) { items(media, key = { it.id }) { MediaTile(it, false, onOpen, {}) } }
+        }
+    }
+}
+
+@Composable
+private fun GallerySearchScreen(media: List<GalleryMedia>, onBack: () -> Unit, onOpen: (GalleryMedia) -> Unit) {
+    val context = LocalContext.current
+    val preferences = remember { context.getSharedPreferences("gallery-search-settings", 0) }
+    var query by remember { mutableStateOf("") }
+    var menu by remember { mutableStateOf(false) }
+    var settingsOpen by remember { mutableStateOf(false) }
+    val results = remember(media, query) { if (query.isBlank()) emptyList() else media.filter { it.name.contains(query, true) || it.bucketName.contains(query, true) || it.mimeType.contains(query, true) } }
+    if (settingsOpen) {
+        SearchSettingsScreen(preferences, onBack = { settingsOpen = false })
+        return
+    }
+    Column(Modifier.fillMaxSize()) {
+        GalleryToolbar(
+            back = onBack,
+            extra = {
+                Box {
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "More options") }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("Search settings") }, onClick = { menu = false; settingsOpen = true })
+                    }
+                }
+            },
+        )
+        if (query.isBlank()) {
+            Column(Modifier.weight(1f).verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                SearchCategory("Locations", listOf("View all", "On this device"))
+                SearchCategory("Activity", listOf("AI-edited", "Edited"))
+                SearchCategory("Shot types", listOf("Video ${media.count { it.kind == MediaKind.VIDEO }}", "Scan", "Selfie", "Portrait"))
+                SearchCategory("Documents", listOf("Receipts", "Screenshots", "Text"))
+            }
+        } else if (results.isEmpty()) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text("No results for “$query”", color = VaultSecondary) }
+        } else {
+            LazyVerticalGrid(columns = GridCells.Fixed(4), modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                items(results, key = { it.id }) { MediaTile(it, false, onOpen, {}) }
+            }
+        }
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            leadingIcon = { Icon(Icons.Outlined.Search, null) },
+            label = { Text("Search") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(14.dp),
+        )
+    }
+}
+
+@Composable
+private fun SearchCategory(title: String, values: List<String>) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, style = MaterialTheme.typography.titleLarge)
+        values.chunked(2).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEach { value -> Card(colors = CardDefaults.cardColors(containerColor = VaultSurface), modifier = Modifier.weight(1f)) { Text(value, Modifier.padding(18.dp)) } }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchSettingsScreen(preferences: android.content.SharedPreferences, onBack: () -> Unit) {
+    var recent by remember { mutableStateOf(preferences.getBoolean("recent", true)) }
+    var suggestions by remember { mutableStateOf(preferences.getBoolean("suggestions", true)) }
+    val categories = listOf("Search shortcuts", "People", "Locations", "Documents", "Activity", "Shot types", "My tags")
+    Column(Modifier.fillMaxSize()) {
+        GalleryToolbar("Search settings", onBack)
+        SettingsGroup {
+            SettingSwitch("Show recent searches", recent) { recent = it; preferences.edit().putBoolean("recent", it).apply() }
+            SettingSwitch("Show suggestions", suggestions) { suggestions = it; preferences.edit().putBoolean("suggestions", it).apply() }
+        }
+        Text("Search categories", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(18.dp))
+        Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+            categories.forEach { category ->
+                var checked by remember(category) { mutableStateOf(preferences.getBoolean("category_$category", category != "My tags")) }
+                SettingSwitch(category, checked) { checked = it; preferences.edit().putBoolean("category_$category", it).apply() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CleanOutScreen(media: List<GalleryMedia>, onBack: () -> Unit) {
+    val duplicates = remember(media) { media.groupBy { Triple(it.sizeBytes, it.width, it.height) }.values.filter { it.size > 1 }.flatten() }
+    Column(Modifier.fillMaxSize()) {
+        GalleryToolbar("Clean out", onBack)
+        if (duplicates.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(Icons.Outlined.CleaningServices, null, Modifier.size(56.dp), tint = VaultSecondary)
+                    Text("No clean out needed", style = MaterialTheme.typography.titleLarge)
+                    Text("Duplicate pictures, old documents, and more will appear here so you can get rid of them easily.", color = VaultSecondary, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 40.dp))
+                }
+            }
+        } else {
+            Text("Possible duplicates", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(18.dp))
+            Text("Review carefully before deleting. Matching file size and dimensions can still be different photos.", color = VaultSecondary, modifier = Modifier.padding(horizontal = 18.dp))
+            LazyVerticalGrid(columns = GridCells.Fixed(4), modifier = Modifier.fillMaxSize().padding(8.dp)) { items(duplicates, key = { it.id }) { MediaTile(it, false, {}, {}) } }
+        }
+    }
+}
+
+@Composable
+private fun LocationsScreen(media: List<GalleryMedia>, onBack: () -> Unit, onOpen: (GalleryMedia) -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        GalleryToolbar("Locations", onBack)
+        Text("On this device", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(18.dp))
+        Text("Android limits location metadata for some media. Items with accessible location details are grouped here locally.", color = VaultSecondary, modifier = Modifier.padding(horizontal = 18.dp))
+        LazyVerticalGrid(columns = GridCells.Fixed(4), modifier = Modifier.fillMaxSize().padding(8.dp)) { items(media.take(40), key = { it.id }) { MediaTile(it, false, onOpen, {}) } }
+    }
+}
+
+@Composable
+private fun SharedAlbumsScreen(onBack: () -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        GalleryToolbar("Shared albums", onBack)
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(38.dp)) {
+                Icon(Icons.Outlined.FolderShared, null, Modifier.size(62.dp), tint = VaultSecondary)
+                Text("Stay connected", style = MaterialTheme.typography.headlineMedium)
+                Text("Create albums everyone can add to. On Pixel, sharing uses Android's system share sheet so you stay in control of the provider and recipients.", color = VaultSecondary, textAlign = TextAlign.Center)
+                Button(onClick = {}) { Text("Get started") }
+            }
+        }
+    }
+}
+
+@Composable
 private fun MenuScreen(
     onVideos: () -> Unit,
     onRecent: () -> Unit,
     onFavourites: () -> Unit,
+    onCleanOut: () -> Unit,
+    onLocations: () -> Unit,
+    onSharedAlbums: () -> Unit,
     onSettings: () -> Unit,
     onTrash: () -> Unit,
     onSecure: () -> Unit,
@@ -779,11 +1030,24 @@ private fun MenuScreen(
                     MenuAction(Icons.Outlined.VideoLibrary, "Videos", onVideos)
                     MenuAction(Icons.Outlined.Favorite, "Favourites", onFavourites)
                     MenuAction(Icons.Outlined.Today, "Recent", onRecent)
+                    MenuAction(Icons.Outlined.CleaningServices, "Clean out", onCleanOut)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    MenuAction(Icons.Outlined.LocationOn, "Locations", onLocations)
+                    MenuAction(Icons.Outlined.FolderShared, "Shared\nalbums", onSharedAlbums)
                     MenuAction(Icons.Outlined.Delete, "Recycle bin", onTrash)
                     MenuAction(Icons.Outlined.Settings, "Settings", onSettings)
-                    MenuAction(Icons.Outlined.Lock, "Secure Gallery", onSecure)
+                }
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF4A4A4F)),
+                    shape = RoundedCornerShape(22.dp),
+                    modifier = Modifier.fillMaxWidth().combinedClickable(role = Role.Button, onClick = onSecure, onLongClick = onSecure),
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.Lock, "Secure Gallery", Modifier.size(30.dp), tint = VaultSecure)
+                        Text("Open Secure Gallery", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 16.dp).weight(1f))
+                        Text("›", style = MaterialTheme.typography.headlineMedium)
+                    }
                 }
             }
         }
@@ -793,7 +1057,7 @@ private fun MenuScreen(
 @Composable
 private fun MenuAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
     Column(
-        Modifier.width(110.dp).combinedClickable(role = Role.Button, onClick = onClick, onLongClick = onClick).padding(vertical = 18.dp),
+        Modifier.width(82.dp).combinedClickable(role = Role.Button, onClick = onClick, onLongClick = onClick).padding(vertical = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) { Icon(icon, label, Modifier.size(30.dp)); Text(label, textAlign = TextAlign.Center, style = MaterialTheme.typography.labelLarge) }
@@ -827,12 +1091,34 @@ private fun SelectionBar(
     onFavourite: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    var createMenu by remember { mutableStateOf(false) }
+    var moreMenu by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().height(82.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceAround) {
+        BottomAction(Icons.Outlined.Add, "Create", { createMenu = true })
         BottomAction(Icons.Outlined.Share, "Share", onShare)
-        BottomAction(Icons.Outlined.Lock, "Secure", onSecure)
-        BottomAction(Icons.Outlined.Favorite, favouriteLabel, onFavourite)
-        BottomAction(Icons.Outlined.Delete, "Trash", onDelete)
+        BottomAction(Icons.Outlined.Delete, "Delete", onDelete)
+        Box {
+            BottomAction(Icons.Outlined.MoreVert, "More", { moreMenu = true })
+            DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
+                DropdownMenuItem(text = { Text("Copy to clipboard") }, leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) }, onClick = { moreMenu = false })
+                DropdownMenuItem(text = { Text("Copy to album") }, onClick = { moreMenu = false })
+                DropdownMenuItem(text = { Text("Move to album") }, onClick = { moreMenu = false })
+                DropdownMenuItem(text = { Text("Add to shared album") }, onClick = { moreMenu = false })
+                DropdownMenuItem(text = { Text(if (favouriteLabel == "Unfavourite") "Remove from favourites" else "Add to favourites") }, leadingIcon = { Icon(Icons.Outlined.Favorite, null) }, onClick = { moreMenu = false; onFavourite() })
+                DropdownMenuItem(text = { Text("Add tag") }, onClick = { moreMenu = false })
+                DropdownMenuItem(text = { Text("Edit date and time") }, onClick = { moreMenu = false })
+                DropdownMenuItem(text = { Text("Edit location") }, onClick = { moreMenu = false })
+                HorizontalDivider()
+                DropdownMenuItem(text = { Text("Move to Secure Gallery") }, leadingIcon = { Icon(Icons.Outlined.Lock, null) }, onClick = { moreMenu = false; onSecure() })
+            }
+        }
     }
+    if (createMenu) AlertDialog(
+        onDismissRequest = { createMenu = false },
+        title = { Text("Create from selected items") },
+        text = { Text("GIF\nCollage\nMovie") },
+        confirmButton = { TextButton(onClick = { createMenu = false }) { Text("Done") } },
+    )
 }
 
 @Composable
@@ -846,39 +1132,63 @@ private fun BottomAction(icon: androidx.compose.ui.graphics.vector.ImageVector, 
 private fun GallerySettings(onBack: () -> Unit) {
     val context = LocalContext.current
     val preferences = remember { context.getSharedPreferences("gallery-settings", 0) }
+    var oneDrive by remember { mutableStateOf(preferences.getBoolean("onedrive", false)) }
+    var fullScreen by remember { mutableStateOf(preferences.getBoolean("full_screen_scroll", false)) }
+    var motionPhotos by remember { mutableStateOf(preferences.getBoolean("motion_photos", true)) }
     var externalPlayer by remember { mutableStateOf(preferences.getBoolean("external_player", false)) }
     var essential by remember { mutableStateOf(preferences.getBoolean("essential", true)) }
-    var gridColumns by remember { mutableStateOf(preferences.getInt("grid_columns", 4).coerceIn(3, 5)) }
+    var stories by remember { mutableStateOf(preferences.getBoolean("auto_stories", true)) }
+    var notifications by remember { mutableStateOf(preferences.getBoolean("story_notifications", true)) }
+    var mergeAlbums by remember { mutableStateOf(preferences.getBoolean("merge_albums", true)) }
+    var sharedNotifications by remember { mutableStateOf(preferences.getBoolean("shared_notifications", true)) }
+    var placeNames by remember { mutableStateOf(preferences.getBoolean("place_names", false)) }
     var secureLauncher by remember { mutableStateOf(isSecureLauncherVisible(context)) }
     var dialog by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize()) {
         GalleryToolbar("Gallery settings", onBack)
         androidx.compose.foundation.rememberScrollState().let { scroll ->
-            Column(Modifier.fillMaxSize().padding(horizontal = 10.dp).verticalScroll(scroll), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.fillMaxSize().padding(horizontal = 10.dp).verticalScroll(scroll), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SettingsGroup {
+                    SettingSwitch("Sync with OneDrive", "Cloud syncing is optional and handled through Android's document providers.", oneDrive) { oneDrive = it; preferences.edit().putBoolean("onedrive", it).apply() }
+                }
                 SettingsHeader("Viewing")
                 SettingsGroup {
-                    SettingLink("Grid size: $gridColumns columns") {
-                        gridColumns = if (gridColumns == 5) 3 else gridColumns + 1
-                        preferences.edit().putInt("grid_columns", gridColumns).apply()
-                    }
+                    SettingSwitch("Full screen scrolling", fullScreen) { fullScreen = it; preferences.edit().putBoolean("full_screen_scroll", it).apply() }
+                    SettingSwitch("Auto play motion photos", motionPhotos) { motionPhotos = it; preferences.edit().putBoolean("motion_photos", it).apply() }
                     SettingSwitch("Open in video player", externalPlayer) { externalPlayer = it; preferences.edit().putBoolean("external_player", it).apply() }
+                }
+                SettingsHeader("Editing")
+                SettingsGroup {
+                    SettingLink("Photo assist") { dialog = "Photo assist\n\nGenerative edit\nSketch to image\nPortrait studio\n\nAI editing is off by default. If enabled in a future provider integration, images will only be sent after explicit confirmation." }
+                    SettingLink("Photo Editor settings") { dialog = "Photo Editor settings\n\nPermissions\nAbout Photo Editor" }
+                }
+                SettingsHeader("Stories")
+                SettingsGroup {
+                    SettingSwitch("Auto create stories", stories) { stories = it; preferences.edit().putBoolean("auto_stories", it).apply() }
+                    SettingSwitch("Notifications", notifications) { notifications = it; preferences.edit().putBoolean("story_notifications", it).apply() }
                 }
                 SettingsHeader("Albums")
                 SettingsGroup {
-                    SettingSwitch("Select essential albums", essential) { essential = it; preferences.edit().putBoolean("essential", it).apply() }
+                    SettingSwitch("Select essential albums", "Show only the albums you select on the Albums tab instead of showing them all.", essential) { essential = it; preferences.edit().putBoolean("essential", it).apply() }
+                    SettingSwitch("Merge albums", "Albums with the same name will be shown as a single album.", mergeAlbums) { mergeAlbums = it; preferences.edit().putBoolean("merge_albums", it).apply() }
+                    SettingSwitch("Shared album notifications", sharedNotifications) { sharedNotifications = it; preferences.edit().putBoolean("shared_notifications", it).apply() }
                 }
+                SettingsGroup { SettingSwitch("Show place names", placeNames) { placeNames = it; preferences.edit().putBoolean("place_names", it).apply() } }
                 SettingsHeader("Privacy")
                 SettingsGroup {
-                    SettingSwitch("Show Secure Gallery icon", secureLauncher) {
-                        secureLauncher = it
-                        setSecureLauncherVisible(context, it)
-                    }
                     SettingLink("Privacy Policy") { dialog = "Vault Gallery processes media locally and does not upload it by default. Secure Gallery exports plaintext only after your explicit action." }
                     SettingLink("Permissions") {
                         context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${context.packageName}".toUri()))
                     }
                 }
-                SettingsGroup { SettingLink("About Gallery") { dialog = "Vault Gallery 1.1\nA local-first Pixel gallery with Samsung-style selection and application-level encrypted Secure Gallery." } }
+                SettingsHeader("Secure Gallery")
+                SettingsGroup {
+                    SettingSwitch("Show Secure Gallery icon", "Keep a separate launcher entry, similar to Samsung Secure Folder.", secureLauncher) {
+                        secureLauncher = it; setSecureLauncherVisible(context, it)
+                    }
+                    SettingLink("Secure Gallery settings") { context.startActivity(Intent(context, SecureGalleryActivity::class.java)) }
+                }
+                SettingsGroup { SettingLink("About Gallery") { dialog = "Vault Gallery 2.0\nA local-first Pixel gallery with Samsung-style navigation, slide selection, system trash, favourites, search, stories, and encrypted biometric Secure Gallery." } }
                 Spacer(Modifier.height(22.dp))
             }
         }
@@ -902,6 +1212,18 @@ private fun SettingSwitch(title: String, checked: Boolean, onChecked: (Boolean) 
 }
 
 @Composable
+private fun SettingSwitch(title: String, description: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(description, color = VaultSecondary, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
+        }
+        Switch(checked, onChecked)
+    }
+    HorizontalDivider(color = Color(0xFF38383D), modifier = Modifier.padding(horizontal = 18.dp))
+}
+
+@Composable
 private fun SettingLink(title: String, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().height(74.dp).combinedClickable(role = Role.Button, onClick = onClick, onLongClick = onClick).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title, style = MaterialTheme.typography.bodyLarge)
@@ -918,18 +1240,47 @@ private fun PublicViewer(
     onFavourite: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val context = LocalContext.current
     var deletePrompt by remember { mutableStateOf(false) }
+    var moreMenu by remember { mutableStateOf(false) }
+    var details by remember { mutableStateOf(false) }
+    var assist by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (media.kind == MediaKind.VIDEO) PublicVideo(media.uri) else ZoomableImage(media.uri, media.name)
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") }
-            Text(media.name, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = {}) { Icon(Icons.Outlined.Slideshow, "Smart View") }
+            IconButton(onClick = {}) { Icon(Icons.Outlined.Restore, "Rotate") }
+            Box {
+                IconButton(onClick = { moreMenu = true }) { Icon(Icons.Outlined.MoreVert, "More options") }
+                DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
+                    DropdownMenuItem(text = { Text("Details") }, leadingIcon = { Icon(Icons.Outlined.Info, null) }, onClick = { moreMenu = false; details = true })
+                    DropdownMenuItem(text = { Text("Copy to clipboard") }, leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) }, onClick = {
+                        moreMenu = false
+                        val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+                        clipboard.setPrimaryClip(android.content.ClipData.newUri(context.contentResolver, media.name, media.uri))
+                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                    })
+                    if (media.kind == MediaKind.VIDEO) DropdownMenuItem(text = { Text("Open in Video player") }, onClick = {
+                        moreMenu = false; context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(media.uri, media.mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                    })
+                    DropdownMenuItem(text = { Text("Set as wallpaper") }, onClick = {
+                        moreMenu = false; context.startActivity(Intent(Intent.ACTION_ATTACH_DATA).setDataAndType(media.uri, media.mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).putExtra("mimeType", media.mimeType))
+                    })
+                    DropdownMenuItem(text = { Text("Move to Secure Gallery") }, leadingIcon = { Icon(Icons.Outlined.Lock, null) }, onClick = { moreMenu = false; onSecure() })
+                }
+            }
         }
         Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().background(Color(0xCC111113)).padding(10.dp), horizontalArrangement = Arrangement.SpaceAround) {
-            BottomAction(Icons.Outlined.Share, "Share", onShare)
-            BottomAction(Icons.Outlined.Lock, "Secure", onSecure)
             BottomAction(Icons.Outlined.Favorite, if (media.isFavourite) "Unfavourite" else "Favourite", onFavourite)
-            BottomAction(Icons.Outlined.Delete, "Trash", { deletePrompt = true })
+            BottomAction(Icons.Outlined.Edit, "Edit", {
+                runCatching { context.startActivity(Intent(Intent.ACTION_EDIT).setDataAndType(media.uri, media.mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }
+                    .onFailure { Toast.makeText(context, "No compatible editor is installed", Toast.LENGTH_SHORT).show() }
+            })
+            BottomAction(Icons.Outlined.AutoAwesome, "Photo assist", { assist = true })
+            BottomAction(Icons.Outlined.Share, "Share", onShare)
+            BottomAction(Icons.Outlined.Delete, "Delete", { deletePrompt = true })
         }
     }
     if (deletePrompt) AlertDialog(
@@ -938,6 +1289,18 @@ private fun PublicViewer(
         text = { Text("Android keeps the item in the system recycle bin so you can restore it later.") },
         dismissButton = { TextButton(onClick = { deletePrompt = false }) { Text("Cancel") } },
         confirmButton = { TextButton(onClick = { deletePrompt = false; onDelete() }) { Text("Move to bin") } },
+    )
+    if (details) AlertDialog(
+        onDismissRequest = { details = false },
+        title = { Text(media.name) },
+        text = { Text("${SimpleDateFormat("d MMM yyyy, h:mm a", Locale.getDefault()).format(Date(media.dateTakenMs))}\n${media.width} × ${media.height}\n${GalleryLogic.fileSizeLabel(media.sizeBytes)}\n${media.mimeType}\nAlbum: ${media.bucketName}") },
+        confirmButton = { TextButton(onClick = { details = false }) { Text("Done") } },
+    )
+    if (assist) AlertDialog(
+        onDismissRequest = { assist = false },
+        title = { Text("Photo assist") },
+        text = { Text("Generative edit\nSketch to image\nPortrait studio\n\nThese Galaxy AI services are Samsung-exclusive. Vault Gallery keeps this entry explicit and does not upload your image without a configured AI provider and confirmation.") },
+        confirmButton = { TextButton(onClick = { assist = false }) { Text("Done") } },
     )
 }
 

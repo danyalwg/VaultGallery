@@ -1,6 +1,6 @@
 # Known Limitations
 
-Vault Gallery 1.1 is a substantial personal-use debug build, not a Play Store production release.
+Vault Gallery 2.0 is a substantial personal-use debug build, not a Play Store production release.
 
 ## Implemented
 
@@ -18,7 +18,8 @@ Vault Gallery 1.1 is a substantial personal-use debug build, not a Play Store pr
 
 - Recovery keys, encrypted device-to-device backup/migration, durable WorkManager import queues, resumable large imports, folder-tree imports, duplicate detection, or transactional deletion of the public source after a secure copy.
 - Encrypted thumbnail caches; secure image thumbnails are decrypted on demand while the vault is unlocked.
-- Location maps/editing, shared albums, people grouping, OCR, semantic labels, cloud sync, advanced cleanup analysis, or full photo/video editing and creative tools.
+- Full location-map metadata, network-backed shared albums, people/face grouping, OCR, semantic labels, cloud sync, and Samsung's proprietary Galaxy AI services.
+- Built-in pixel-level photo/video editing and final GIF/collage/movie rendering; the current build routes media to compatible Android editors and providers where possible.
 - Samsung account/network features, vendor-specific motion-photo playback, RAW workflows, Chromecast, or cross-device continuity.
 - Full tablet/foldable layouts, performance benchmarks for extremely large libraries, release signing, store packaging, accessibility certification, and a complete physical-device matrix.
 
@@ -26,4 +27,4 @@ Vault Gallery 1.1 is a substantial personal-use debug build, not a Play Store pr
 
 Secure Gallery is application-level encrypted storage, not an operating-system container. Rooted or compromised devices, privileged memory inspection, malicious accessibility services, OS/vendor capture defects, and physical cameras remain outside its reliable boundary. Shared plaintext can be retained by recipients. Flash wear leveling prevents guaranteed forensic overwrite.
 
-The APK is debug-signed and visibly marked DEBUG. It is suitable for evaluation and careful personal testing, but irreplaceable private media should remain backed up until migration, recovery, and physical-device testing are completed.
+The APK is debug-signed but has no visual debug watermark. It is suitable for evaluation and careful personal testing, but irreplaceable private media should remain backed up until migration, recovery, and physical-device testing are completed.

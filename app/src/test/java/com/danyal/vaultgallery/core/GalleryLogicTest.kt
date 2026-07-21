@@ -13,6 +13,12 @@ class GalleryLogicTest {
         assertEquals("120:00", GalleryLogic.durationLabel(7_200_000))
     }
 
+    @Test fun fileSizesUseReadableBinaryUnits() {
+        assertEquals("900 B", GalleryLogic.fileSizeLabel(900))
+        assertEquals("1.0 KB", GalleryLogic.fileSizeLabel(1024))
+        assertEquals("1.0 MB", GalleryLogic.fileSizeLabel(1024 * 1024L))
+    }
+
     @Test fun albumNamesNormalizeWithoutMovingFiles() {
         assertEquals("family trip", GalleryLogic.normalizedAlbumName("  Family   Trip "))
     }
