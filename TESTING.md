@@ -1,21 +1,41 @@
-# Testing Strategy
+# Testing strategy
 
-## Layers
+## Version 1 release gate
 
-- Pure unit tests: date grouping, album sorting/merging, essential selection, search parser, selection reducer, trash expiry, duplicate/conflict policy, logical folder reconstruction, transaction state machines, file-format parser, key envelopes, lock timeout, and cleanup decisions.
-- JVM integration tests: Room migrations, repository contracts with fakes, encrypted stream round trips, corruption vectors, paging invalidation, and worker restart logic where Android dependencies can be isolated.
-- Instrumented tests: MediaStore permissions/mutations, Photo Picker/SAF grants, real Room/Keystore/Biometric flows, lifecycle locking, screenshot/recents flags, secure DataSource seeking, import/export cleanup, and reset.
-- Compose UI/screenshot tests: the matrix in `SCREENSHOT_TEST_MATRIX.md`, semantics, keyboard focus, TalkBack labels, large font, rotation, adaptive layouts, and selection persistence.
-- Benchmarks: cold launch, timeline scroll, album/search/viewer/player, indexing, secure thumbnail/import/seek, and photo/video export.
+```bash
+./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+```
+
+The published gate completed with 73 JVM tests, zero failures/errors/skips and zero lint errors.
+
+## Test layers
+
+- **Pure/JVM logic:** media sorting, album rules, transfer routing, crop math, tone/curve math, smart
+  albums, subtitles, selection behavior, duplicates, safety limits and cryptographic helpers.
+- **Connected instrumentation:** Android intent resolution, real encoding, Ultra HDR, lens correction,
+  vector output, media composition, transfer behavior, secure export/recovery, model inference and
+  persistent search indexes.
+- **Physical interaction:** public/Secure launch, viewer ordering, media paging, precise seek,
+  filmstrip behavior, picker handoff, biometric/PIN surface, transfer notifications and editor output.
+- **Static analysis:** Android lint and release manifest review.
+- **Artifact checks:** model checksums, APK hash, version identity, in-place install and crash buffer.
 
 ## Fixtures
 
-Fixtures are generated geometric images, synthetic videos/audio/subtitles, fake metadata, and deliberately corrupt files. Include zero-byte, truncated JPEG, invalid EXIF, corrupt MP4, huge dimensions, wrong extension, non-seekable source, HDR/RAW capability gates, and duplicate sets. Never use supplied screenshots or personal media.
+Use synthetic geometric images, generated video/audio/subtitles, fake metadata, deliberate corruption
+and disposable MediaStore files. Never commit a user’s private screenshots, contacts, locations,
+device dumps, vault media or recovery material.
 
-## Mandatory gates
+## Required change-level checks
 
-Each change runs focused tests and compilation. Each phase runs `assembleDebug`, `testDebugUnitTest`, and `lintDebug`; connected tests run when a supported emulator/device is available. Release candidates additionally run release compilation, migration tests, screenshot matrix, macrobenchmarks, dependency/licence review, security checklist, and manual two-launcher flows.
+1. Compile the touched source set.
+2. Run focused tests.
+3. Run the complete JVM suite.
+4. Run lint.
+5. Assemble the APK.
+6. Run relevant connected tests when Android behavior is involved.
+7. Verify public and Secure Gallery parity where the concept applies.
+8. Verify cancellation, retry and partial failure for data-moving work.
+9. Inspect the Android crash buffer after physical smoke checks.
 
-## Failure policy
-
-Compiler/lint/test failures are fixed or reported; they are not suppressed. Flaky tests are quarantined only with an owner, issue, reason, and deterministic replacement plan. Unsupported device capability results in an explicit skipped-capability assertion, never a false pass.
+Unsupported device capability must be reported explicitly; it is not a successful feature test.

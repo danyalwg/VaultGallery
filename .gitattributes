@@ -3,3 +3,5 @@
 *.jar binary
 *.jpg binary
 *.png binary
+*.onnx filter=lfs diff=lfs merge=lfs -text
+*.task filter=lfs diff=lfs merge=lfs -text

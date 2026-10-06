@@ -8,7 +8,7 @@
 
 ## Secure catalog
 
-`SecureMedia` uses a random `secureId` and random physical object ID. Sensitive values—original name/extension, logical path, MIME type, full metadata, thumbnail/edit IDs, checksum/perceptual hash, import source, location, OCR, labels, tags, and album relationships—are authenticated ciphertext. Operational fields kept clear only when required are version, chunk sizing/count, key reference, import state, logical sort date rounded to the minimum useful precision, trash state/expiry, and integrity state. The Phase 3 review may encrypt additional operational fields if query benchmarks allow.
+`SecureMedia` uses a random `secureId` and random physical object ID. Sensitive values—original name/extension, logical path, MIME type, full metadata, thumbnail/edit IDs, checksum/perceptual hash, import source, location, OCR, labels, tags, and album relationships—belong inside authenticated secure metadata. Operational values remain clear only where the active storage/index format requires them; format changes require a versioned migration and recovery test.
 
 `SecureAlbum`, `SecureFolderNode`, `SecureEditProject`, `SecureDerivedData`, and `SecureTrashRecord` live only in the encrypted secure database. Logical folders use parent IDs plus encrypted display names; physical storage never mirrors the logical tree.
 

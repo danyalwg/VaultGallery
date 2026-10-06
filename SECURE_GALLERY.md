@@ -1,21 +1,57 @@
-# Secure Gallery Architecture
+# Secure Gallery
 
-Secure Gallery is an application-level encrypted vault, not an operating-system container. It protects app-managed data at rest and obscures authenticated screens, but it cannot defend against a rooted/compromised OS, memory inspection by privileged malware, or a physical camera.
+Secure Gallery is an application-level private gallery with the same core browsing, album, viewer,
+editing, creation, sorting, search and metadata concepts as the public gallery. It is not an Android
+system container and does not claim protection from a rooted or compromised operating system.
 
-## Authentication state machine
+## Authentication
 
-First use creates a six-or-more digit PIN or alphanumeric passphrase and chooses no recovery or a one-time high-entropy recovery key. Biometrics/device credential may be convenience unlock methods only after the vault exists. Runtime state is `Uninitialized`, `Locked`, `Authenticating`, `Unlocked`, `KeyInvalidated`, or `ResetRequired`. Failed attempts are rate-limited with increasing delay; no insecure reset exists.
+- Four-digit numeric PIN.
+- Unlock submits automatically after the correct fourth digit.
+- Native Android biometric prompt when enabled.
+- PIN remains the recovery credential for biometric convenience unlock.
+- Explicit lock and configurable background timeout.
+- Unlock policy can permit biometric/PIN, prefer biometric, or require PIN.
 
-The session locks immediately on process restart, screen off, explicit lock, authentication invalidation, and background transition by default. Configurable grace periods are 30 seconds, 1, 5, or 15 minutes. A non-sensitive overlay is applied before secure activity content can be captured during lifecycle transitions.
+## Screen capture
 
-## Isolation
+Screenshot/screen-recording protection is optional and off by default. Enabling it adds Android’s
+secure-window flag while Secure Gallery is visible. Disabling it allows the user to capture the
+screen and accepts the resulting privacy risk.
 
-Secure media, database, thumbnails, search indexes, caches, edit projects, journals, and temporary exports have separate app-private/no-backup roots. Random object IDs are used physically. Secure content, names, thumbnails, navigation destinations, and notification details are unavailable until authentication succeeds. Normal repository/cache types cannot accept secure objects.
+## Storage modes
 
-## Screen protection
+### Encrypted
 
-Every secure window uses `FLAG_SECURE`, disables task snapshots where supported, provides a neutral recent-task preview and label, and replaces content immediately on pause. No secure widgets, shortcuts, thumbnail notifications, or public cache entries are allowed.
+Media is authenticated and encrypted at rest. Playback uses a seekable authenticated Media3 data
+source so normal video navigation does not require publishing the file to MediaStore.
 
-## Analysis, backup, and reset
+### Locked only
 
-OCR, labels, people, and place grouping are off or on-device by explicit setting; their encrypted derived data can be deleted/rebuilt. Ordinary Android backup is disabled for keys and sensitive metadata. Cloud backup is absent until a separately reviewed ciphertext-only recovery design exists. Reset requires authentication, typed confirmation, final warning, and acknowledgement that key destruction makes vault data unrecoverable.
+Media remains ordinary bytes in the persistent vault area. The app gate, `.nomedia` and provider
+policy hide it from normal gallery indexing, but the bytes are not cryptographically protected from
+filesystem access. Approved external apps may receive narrow access.
+
+## Persistent location
+
+The vault payload lives under `Documents/VaultGallery/SecureVault`. This is intentionally outside the
+APK’s automatically deleted private-data area so uninstall does not intentionally erase the media.
+Uninstall still removes app-private preferences; recovery material and an independent backup remain
+mandatory.
+
+## Transfers
+
+Imports and exports use durable background operations. Album names are retained automatically;
+same-name destinations merge and missing destinations are created. Move deletes the source only after
+the destination is committed and verified.
+
+## External applications
+
+Encrypted files are not directly usable by an ordinary external player. Locked-only mode supports a
+user-controlled application allow-list through `SecureMediaProvider`. Grants are scoped to approved
+flows; approved recipients may retain media they can read.
+
+## Threat boundary
+
+See [THREAT_MODEL.md](THREAT_MODEL.md), [KEY_MANAGEMENT.md](KEY_MANAGEMENT.md),
+[SECURE_FILE_FORMAT.md](SECURE_FILE_FORMAT.md) and [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md).

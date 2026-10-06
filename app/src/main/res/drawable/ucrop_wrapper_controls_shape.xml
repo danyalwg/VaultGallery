@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--noinspection PrivateResource,UnusedResources -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:shape="rectangle"
+    tools:ignore="PrivateResource,UnusedResources"
+    tools:override="true">
+    <corners android:topLeftRadius="20dp" android:topRightRadius="20dp" />
+    <solid android:color="#1B1B20" />
+</shape>

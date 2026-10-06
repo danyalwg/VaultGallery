@@ -1,0 +1,69 @@
+name: Bug report
+description: Report a reproducible Vault Gallery Version 1 defect
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not upload private media, vault keys, PINs, contacts, locations or unredacted logs. Reproduce with disposable test media whenever possible.
+  - type: input
+    id: device
+    attributes:
+      label: Device and Android version
+      placeholder: Pixel 8 Pro, Android 16
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Pictures / grid
+        - Albums
+        - Viewer / gestures
+        - Video playback
+        - Photo editor
+        - Video editor
+        - AI-assisted tools
+        - Create / collage / movie / GIF
+        - Secure Gallery
+        - Transfer / copy / move
+        - Search / organization
+        - Android system integration
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Exact reproduction steps
+      placeholder: "1. Open …\n2. Select …\n3. Drag …"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Data-safety impact
+      description: State whether media was duplicated, moved, lost, corrupted or merely displayed incorrectly.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Privacy checks
+      options:
+        - label: I removed private media and personal information.
+          required: true
+        - label: I used Version 1 or current main source.
+          required: true

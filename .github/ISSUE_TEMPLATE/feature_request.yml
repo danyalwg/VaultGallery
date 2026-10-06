@@ -1,0 +1,32 @@
+name: Feature request
+description: Propose a deliberate addition or workflow improvement
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: Describe the problem before describing a solution.
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Proposed workflow
+      description: Explain entry point, interaction, completion, cancellation and failure behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: parity
+    attributes:
+      label: Public / Secure Gallery behavior
+      description: Explain whether and how this should work in both galleries.
+  - type: textarea
+    id: safety
+    attributes:
+      label: Privacy, security and data-safety considerations
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

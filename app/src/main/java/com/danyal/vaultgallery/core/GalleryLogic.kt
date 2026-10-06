@@ -23,13 +23,13 @@ object GalleryLogic {
         if (!add(id)) remove(id)
     }
 
-    fun slideSelection(
-        orderedIds: List<Long>,
-        base: Set<Long>,
-        anchorId: Long,
-        currentId: Long,
+    fun <T> slideSelection(
+        orderedIds: List<T>,
+        base: Set<T>,
+        anchorId: T,
+        currentId: T,
         selecting: Boolean,
-    ): Set<Long> {
+    ): Set<T> {
         val start = orderedIds.indexOf(anchorId)
         val end = orderedIds.indexOf(currentId)
         if (start < 0 || end < 0) return base

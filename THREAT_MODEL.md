@@ -34,4 +34,4 @@ Imports treat media as hostile: MIME sniffing, allocation/decompression limits, 
 
 ## Verification cadence
 
-Phase 3 adds security unit/instrumented tests and a crypto-format review before real media is accepted. Each release rechecks exported components, backup rules, logs, URI grants, dependency advisories, lock lifecycle, recents/screenshot behavior, temporary cleanup, and debug/release isolation.
+Security unit/instrumented tests and crypto-format review accompany format and key-management changes. Each release rechecks exported components, backup rules, logs, URI grants, dependency advisories, lock lifecycle, optional screenshot behavior, temporary cleanup, and debug/release isolation.

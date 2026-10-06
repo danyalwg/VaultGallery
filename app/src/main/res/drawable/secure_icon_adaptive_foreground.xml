@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Match the normal Gallery safe-area treatment without exposing a white/launcher-colour ring. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/secure_gallery_icon_source"
+    android:inset="18dp" />

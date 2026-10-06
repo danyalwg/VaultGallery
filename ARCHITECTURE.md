@@ -1,39 +1,107 @@
 # Architecture
 
-## Decision summary
+Vault Gallery Version 1 is a Kotlin/Jetpack Compose Android application targeting API 35 and modern
+ARM64 flagship phones. It has two launcher surfaces—public Gallery and Secure Gallery—sharing a
+coherent design language and domain concepts while retaining separate storage and authentication
+boundaries.
 
-Vault Gallery is a Kotlin, Jetpack Compose Android application with two launcher activities and separated public and secure data paths. The build targets API 35, supports API 28+, and uses Java 17 bytecode.
+## Modules
 
-## Module boundaries
+| Module | Purpose |
+|---|---|
+| `app` | Android activities, application wiring, platform contracts and mature feature implementations |
+| `design-system` | Shared colors, typography, spacing, shape and motion tokens |
+| `database` | Persistent index/database boundary |
+| `security` | Authentication, secure-storage and access-control boundary |
+| `gallery` | Collection and album domain boundary |
+| `viewer` | Viewer, zoom, paging and playback domain boundary |
+| `editor` | Photo/video editing domain boundary |
+| `creation` | Collage, GIF, movie and generated-media boundary |
+| `transfer` | Durable import/export/copy/move boundary |
+| `search` | Search, smart organization and index boundary |
+| `ai` | Replaceable local model/runtime boundary |
 
-The delivered APK currently uses one Gradle `app` module with package boundaries for UI, public data, shared logic, and security. This is a recorded compromise for the installable milestone. Splitting these packages into the planned Gradle modules remains required before a large-team production release.
+The modules establish dependency direction, but extraction is intentionally incremental. Several
+device-proven implementations remain in `app` until moving them can preserve behavior and test
+coverage.
 
-Every feature uses presentation, domain, and data packages. Composables render immutable UI state and emit events. ViewModels invoke domain use cases. Repositories own storage and service coordination. File I/O, MediaStore queries, database work, media decoding, and cryptography never run in composables or on the main thread.
+## Public Gallery
 
-## Runtime composition
+`MainGalleryActivity` integrates Android MediaStore, system intent contracts and public navigation.
+MediaStore content URIs—not absolute filesystem paths—identify public media. Android owns dangerous
+mutation approvals. The gallery remembers user presentation state but treats MediaStore as the
+library source of truth.
 
-- `MainGalleryActivity` hosts public navigation and never requires authentication.
-- `SecureGalleryActivity` has a separate task identity. Its root state machine permits only `Locked`, `Authenticating`, or `Unlocked`; secure destinations cannot be restored while locked.
-- Android ViewModels own public and secure state independently. Public MediaStore access and secure encrypted storage have separate implementations.
-- Compose state routes between screens. Secure content branches render only while the in-memory master key is available.
-- Secure media, encrypted metadata, and temporary shares use app-private roots and never enter MediaStore.
+The app accepts supported external `VIEW`, `EDIT`, camera review, collection and legacy picker
+intents. Picker mode is bounded: it clears stale viewer/editor/navigation state, limits media kind to
+the caller’s MIME request and returns URI grants without exposing ordinary destructive gallery
+actions.
 
-## Dependency direction
+## Secure Gallery
 
-Feature presentation depends on feature domain contracts and shared design/common modules. Feature data implementations depend on Android adapters in core modules. Core modules never depend on feature UI. Public repositories never accept a security-mode flag; secure repositories are separate types.
+`SecureGalleryActivity` is a separate task with locked/authenticating/unlocked states. Secure media
+may be encrypted or locked-only. It never becomes public MediaStore content merely because it is
+visible inside Secure Gallery.
 
-## Concurrency and recovery
+- Encrypted files use authenticated storage and seekable Media3 data sources.
+- Locked-only files remain ordinary bytes but stay outside public media scanning.
+- A per-app provider/access list mediates approved locked-only external playback.
+- The PIN, biometric policy and vault-key envelopes are separate from media payload identity.
+- Screenshot protection is an optional setting and is off by default.
 
-Coroutines and StateFlow expose observable state. Public loading and secure imports run off the main thread. Durable WorkManager import manifests, pause/resume, and crash recovery remain planned and are listed as limitations.
+## State and concurrency
 
-## Adaptive UI
+Compose renders observable state and emits user intent. ViewModels own public and secure UI state.
+File I/O, hashing, database work, decoding, inference and encoding run away from the main thread.
 
-Phones use edge-to-edge bottom navigation; expanded widths use a navigation rail. Grids derive columns from available width and minimum cell width. Window insets, posture, orientation, font scale, keyboard focus, TalkBack, and reduced-motion settings are first-class inputs.
+Short interactive work uses replacement-cancelled coroutines and bounded previews. Durable media
+operations use WorkManager with persisted operation identity, foreground progress and explicit
+pause/resume/cancel behavior.
+
+## Transfer invariant
+
+A true move is a verified copy followed by deletion:
+
+1. Discover and record source context.
+2. Write a destination temporary object.
+3. Flush and verify bytes/metadata.
+4. Commit the destination.
+5. Confirm the destination is readable.
+6. Obtain Android approval if required.
+7. Delete the source.
+8. Re-query and report the final state.
+
+Cancellation or failure before destination verification leaves the source intact.
+
+## Media pipelines
+
+### Viewer
+
+The viewer receives an ordered media context from its launch surface. Media paging, zoom, information
+swipe and centre-filmstrip state are coordinated so an album viewer does not silently become a global
+library viewer.
+
+### Editing
+
+Editors separate interaction resolution from output resolution. Direct manipulation is rendered with
+GPU transforms or bounded previews; full-resolution render/encode occurs for Apply/Save. Source
+replacement retains the original until the output can be opened and indexed.
+
+### AI-assisted processing
+
+AI runtimes are explicit and replaceable. Model metadata records file, source, checksum, runtime and
+distribution status. Interactive selection, OCR, segmentation, visual descriptors and neural
+inpainting are local in Version 1.
+
+## Android configuration
+
+The Compose design system uses `sp` and the system font family, so Android font scale and weight
+adjustment flow into typography. Window and Compose configuration inherit display scale, locale and
+RTL direction. Motion tokens consult Android’s animator scale and collapse transitions when system
+animations are disabled.
 
 ## Build variants
 
-Debug uses the `.debug` application ID suffix and separate app-private storage. It will visibly identify itself in Phase 1 and can never open release vault files. Release signing configuration remains external and is not committed.
-
-## Architectural decision records to add
-
-Phase 1 will add ADRs for module granularity, screenshot tooling, and font choice. Phase 3 will add ADRs for password KDF, encrypted database strategy, secure file cipher suite, key invalidation, and biometric policy after device benchmarks and security tests validate the choices.
+Debug adds `.debug` to the application ID and appends `-debug` to the visible version. Release builds
+are minified and resource-shrunk but remain unsigned until a protected external signing configuration
+is supplied. Keystores and signing properties are intentionally ignored.

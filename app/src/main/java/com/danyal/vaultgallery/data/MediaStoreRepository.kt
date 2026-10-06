@@ -53,6 +53,7 @@ class MediaStoreRepository(private val context: Context) {
             add(MediaStore.MediaColumns.DATE_ADDED)
             add(MediaStore.Images.ImageColumns.BUCKET_ID)
             add(MediaStore.Images.ImageColumns.BUCKET_DISPLAY_NAME)
+            if (Build.VERSION.SDK_INT >= 29) add(MediaStore.MediaColumns.RELATIVE_PATH)
             if (Build.VERSION.SDK_INT >= 30) {
                 add(MediaStore.MediaColumns.IS_FAVORITE)
                 add(MediaStore.MediaColumns.IS_TRASHED)
@@ -86,6 +87,7 @@ class MediaStoreRepository(private val context: Context) {
             val addedColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_ADDED)
             val bucketIdColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.ImageColumns.BUCKET_ID)
             val bucketNameColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.ImageColumns.BUCKET_DISPLAY_NAME)
+            val relativePathColumn = if (Build.VERSION.SDK_INT >= 29) cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH) else -1
             val favouriteColumn = if (Build.VERSION.SDK_INT >= 30) cursor.getColumnIndex(MediaStore.MediaColumns.IS_FAVORITE) else -1
             val trashedColumn = if (Build.VERSION.SDK_INT >= 30) cursor.getColumnIndex(MediaStore.MediaColumns.IS_TRASHED) else -1
             while (cursor.moveToNext()) {
@@ -106,6 +108,7 @@ class MediaStoreRepository(private val context: Context) {
                     bucketName = cursor.getString(bucketNameColumn).orEmpty().ifBlank { "Pictures" },
                     isFavourite = favouriteColumn >= 0 && cursor.getInt(favouriteColumn) == 1,
                     isTrashed = trashedColumn >= 0 && cursor.getInt(trashedColumn) == 1,
+                    relativePath = if (relativePathColumn >= 0) cursor.getString(relativePathColumn).orEmpty() else "",
                 )
             }
         }

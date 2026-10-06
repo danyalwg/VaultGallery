@@ -6,6 +6,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.danyal.vaultgallery.data.GalleryMedia
 import com.danyal.vaultgallery.data.MediaStoreRepository
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,29 +24,40 @@ data class PublicGalleryState(
 
 class GalleryViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = MediaStoreRepository(application)
+    private val searchIndex = GallerySearchIndex(application)
     private val _state = MutableStateFlow(PublicGalleryState())
     val state: StateFlow<PublicGalleryState> = _state.asStateFlow()
+    private var refreshJob: Job? = null
 
     fun refresh() {
-        viewModelScope.launch {
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
             val hasAccess = repository.hasAnyAccess()
             _state.value = _state.value.copy(loading = true, hasAccess = hasAccess, error = null)
-            runCatching {
+            try {
                 if (hasAccess) repository.loadMedia() to repository.loadMedia(includeTrashed = true).filter { it.isTrashed }
                 else emptyList<GalleryMedia>() to emptyList()
+            } catch (cancelled: CancellationException) {
+                // A newer refresh superseded this one. Cancellation is normal control flow and
+                // must never replace a healthy gallery with an error screen.
+                throw cancelled
+            } catch (error: Throwable) {
+                _state.value = _state.value.copy(
+                    loading = false,
+                    hasAccess = hasAccess,
+                    error = error.message ?: "Unable to read media",
+                )
+                return@launch
+            }.let { (media, trash) ->
+                searchIndex.indexMedia(media)
+                _state.value = _state.value.copy(
+                    loading = false,
+                    hasAccess = hasAccess,
+                    media = media,
+                    trash = trash,
+                    selectedIds = _state.value.selectedIds.intersect(media.mapTo(HashSet()) { it.id }),
+                )
             }
-                .onSuccess { (media, trash) ->
-                    _state.value = _state.value.copy(
-                        loading = false,
-                        hasAccess = hasAccess,
-                        media = media,
-                        trash = trash,
-                        selectedIds = _state.value.selectedIds.intersect(media.mapTo(HashSet()) { it.id }),
-                    )
-                }
-                .onFailure { error ->
-                    _state.value = _state.value.copy(loading = false, hasAccess = hasAccess, error = error.message ?: "Unable to read media")
-                }
         }
     }
 

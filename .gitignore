@@ -4,6 +4,41 @@
 **/build/
 *.iml
 /.kotlin/
-/design-reference/reference-images/
-/artifacts/*.apk
-/artifacts/*.xml
+
+# Signing material and machine-local configuration must never be published.
+*.jks
+*.keystore
+keystore.properties
+.env
+.env.*
+!.env.example
+
+# Generated packages, reports, device captures, and private comparison material.
+/artifacts/
+/dist/
+/design-reference/
+/tools/
+IMPLEMENTATION_PLAN.md
+DESIGN_TOKENS.md
+LAYOUT_MEASUREMENTS.md
+SCREENSHOT_TEST_MATRIX.md
+SCREEN_REFERENCE_MAP.md
+/*_AUDIT*.md
+/AUDIT_*.md
+/CHECKLIST_*.md
+/CONTROL_BY_CONTROL_*.md
+/EDITING_PARITY_*.md
+/FINAL_*_AUDIT.md
+/INTERACTION_INVENTORY_*.md
+/SAMSUNG_PARITY_NOTES.md
+/VAULT_GALLERY_REMAINING_AUDIT_*.html
+
+# Android/desktop debris.
+*.apk
+*.aab
+*.apks
+*.idsig
+*.hprof
+captures/
+.DS_Store
+Thumbs.db

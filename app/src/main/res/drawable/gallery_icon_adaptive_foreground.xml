@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Keep the supplied flattened artwork inside Android's adaptive-icon safe zone. The matching
+     gradient background fills the launcher mask, so shrinking the art no longer creates a ring. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/gallery_icon_source"
+    android:inset="18dp" />

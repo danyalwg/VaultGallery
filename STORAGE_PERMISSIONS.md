@@ -1,23 +1,30 @@
-# Storage and Permissions
+# Storage and permissions
 
-## API policy
+## Public media
 
-- API 33+: request `READ_MEDIA_IMAGES` and/or `READ_MEDIA_VIDEO` only after an explanation; use the system Photo Picker for user-chosen imports.
-- API 34+: honor selected-photo access and detect changes without presenting inaccessible items.
-- API 28–32: request the narrow legacy read permission required by the OS; scoped storage rules apply where available.
-- Folder trees and removable storage use `ACTION_OPEN_DOCUMENT_TREE` with persisted URI grants.
-- Modifications and deletion always use platform approval requests when the app does not own the item.
+- API 33+: `READ_MEDIA_IMAGES` and `READ_MEDIA_VIDEO` according to the requested scope.
+- API 34+: selected visual-media access is honored.
+- Older supported Android versions use the legacy read permission allowed by the OS.
+- Public edits/deletes use Android approval requests when Vault Gallery does not own the item.
+- Android Photo Picker is preferred for user-selected additions/shares where appropriate.
 
-`MANAGE_EXTERNAL_STORAGE` is not planned. Microphone is requested only inside voice-over recording. Location is requested only for an explicit location feature that truly needs current location; reading existing media coordinates does not justify it.
+## Persistent Secure Gallery storage
 
-## UX states
+The sideloaded flagship build requests broad file-management access because its vault payload is
+stored in a user-owned Documents location designed to survive APK uninstall. This permission is
+powerful and would require redesign/policy review before an ordinary Play Store listing. The UI
+provides a dedicated system-settings path when persistent storage access is missing.
 
-Before a system dialog, explain the benefit and the exact data category. The public gallery supports `Loading`, `FullAccess`, `PartialAccess`, `Empty`, `Denied`, `PermanentlyDenied`, `Revoked`, and `Error`. Partial access shows an unobtrusive scope banner and a system-picker action; denial leaves import/picker and settings guidance available.
+## Other permissions
+
+- Contacts: optional display-name resolution for conversation-oriented WhatsApp organization.
+- Notifications and foreground data sync: visible durable transfer progress and controls.
+- Biometrics: native Secure Gallery unlock.
+- Wallpaper: explicit set-as-wallpaper action.
+- Record audio: user-triggered creation/editing paths that need audio input.
 
 ## URI safety
 
-All streams are opened with `ContentResolver`; absolute public filesystem paths are never assumed. Persisted SAF grants are audited at startup. Grant loss pauses affected jobs with a recoverable error. Secure exports use a private `FileProvider` allowlist, temporary read grants, expiry journal, and startup cleanup.
-
-## Testing
-
-Instrumented coverage includes permission grant/deny/revoke, API 34 partial access, Photo Picker cancellation, removable media removal, read-only documents, user-denied delete/write, process death during approval, and rotation while a system request is pending.
+Public media uses `ContentResolver` and content URIs. Secure sharing uses narrow URI grants. Persisted
+grants are treated as revocable, and loss of access becomes a recoverable error rather than a reason
+to delete source data.

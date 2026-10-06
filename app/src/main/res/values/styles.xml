@@ -1,6 +1,9 @@
 <resources>
-    <style name="Theme.VaultGallery" parent="android:style/Theme.Material.NoActionBar">
-        <item name="android:fontFamily">sans</item>
+    <!-- PhotoEditor embeds AppCompat FilterImageView widgets. Using a platform-only
+         Material theme leaves those widgets without the AppCompat attributes they need and
+         can strand GPU filter renders while saveAsBitmap waits for a frame. Compose provides
+         the visible UI, so moving the host activity to AppCompat is otherwise neutral. -->
+    <style name="Theme.VaultGallery" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:navigationBarColor">#000000</item>
         <item name="android:statusBarColor">#000000</item>
@@ -8,4 +11,5 @@
         <item name="android:windowLightNavigationBar">false</item>
         <item name="android:colorAccent">#4A86F7</item>
     </style>
+
 </resources>

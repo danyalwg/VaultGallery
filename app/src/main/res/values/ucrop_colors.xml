@@ -1,0 +1,14 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <color name="ucrop_color_toolbar" tools:override="true">#101012</color>
+    <color name="ucrop_color_toolbar_widget" tools:override="true">#FFFFFF</color>
+    <color name="ucrop_color_widget" tools:override="true">#FFFFFF</color>
+    <color name="ucrop_color_widget_active" tools:override="true">#FFFFFF</color>
+    <color name="ucrop_color_widget_background" tools:override="true">#1B1B20</color>
+    <color name="ucrop_color_inactive_aspect_ratio" tools:override="true">#B7B7C2</color>
+    <color name="ucrop_color_active_aspect_ratio" tools:override="true">#FFD60A</color>
+    <color name="ucrop_color_active_controls_color" tools:override="true">#FFD60A</color>
+    <color name="ucrop_color_inactive_controls_color" tools:override="true">#B7B7C2</color>
+    <color name="ucrop_color_widget_rotate_angle" tools:override="true">#FFFFFF</color>
+    <color name="ucrop_color_widget_rotate_mid_line" tools:override="true">#FFD60A</color>
+    <color name="ucrop_color_widget_text" tools:override="true">#FFD60A</color>
+</resources>

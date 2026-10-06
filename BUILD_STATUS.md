@@ -1,48 +1,62 @@
-# Build Status
+# Vault Gallery Version 1 — build status
 
-## Vault Gallery 2.1 debug build
+## Published artifact
 
-- Date: 2026-07-21 (Asia/Karachi)
-- Project: `D:\personal projects\VaultGallery`
-- Android Studio alias: `C:\Users\danya\Desktop\VaultGallery`
-- Application ID: `com.danyal.vaultgallery.debug`
-- Version: `2.1.0-debug` (version code 4)
-- minSdk / targetSdk / compileSdk: 28 / 35 / 35
-- Android Gradle Plugin / Gradle: 8.8.2 / 8.10.2
-- Java bytecode: 17
+| Field | Value |
+|---|---|
+| Product version | `1.0.0-debug` |
+| Android version code | `66` (retained so existing evaluation installs can upgrade in place) |
+| Application ID | `com.danyal.vaultgallery.debug` |
+| Minimum Android | API 29 / Android 10 |
+| Target Android SDK | API 35 |
+| CPU architecture | ARM64 / `arm64-v8a` |
+| Device verification | Pixel 8 Pro (`husky`) |
+| Physical installation | Functionally identical pre-publication build installed in place; Version 1 differs only in its public version label |
+| Data-preservation observation | In-place installation retained the original first-install timestamp |
+| APK | `VaultGallery-v1.0.0-arm64.apk` in the GitHub Version 1 release |
+| Signing | Android debug certificate; evaluation only |
 
-## Automated checks
+APK size: `449,216,401` bytes. SHA-256:
+`4217DF35B9200982E0ECAAB7EBE30104197CA22714F3A5AD659E4BBE765BC201`.
+The same digest is attached to the GitHub release in `SHA256SUMS.txt`.
 
-| Check | Result | Details |
-|---|---|---|
-| `assembleDebug` | PASS | Final APK assembled successfully |
-| `testDebugUnitTest` | PASS | GalleryLogic selection, formatting, and grouping tests |
-| `lintDebug` | PASS | No lint errors; dependency-update advisories only |
-| `connectedDebugAndroidTest` | PASS | 1 launcher/manifest test on Pixel_6_API_30 Android 11 emulator |
-| APK signature | PASS | APK Signature Scheme v2 verified; Android debug certificate |
-| Reference asset exclusion | PASS | No supplied screenshot names or reference-image paths found in the APK archive |
+## Release gate
 
-The final combined Gradle verification ran 81 tasks and completed with `BUILD SUCCESSFUL` in 2m 34s.
+| Check | Result |
+|---|---|
+| Kotlin/Android compilation | PASS |
+| JVM tests | PASS — 73 tests, 0 failures, 0 errors, 0 skipped |
+| Android lint | PASS — 0 errors |
+| Debug APK assembly | PASS |
+| Expanded system-integration instrumentation | PASS |
+| `CATEGORY_APP_GALLERY` resolution | PASS |
+| Photo/video `VIEW` resolution | PASS |
+| Photo/video `EDIT` resolution | PASS |
+| Modern/legacy camera review resolution | PASS |
+| Photo/video picker resolution | PASS |
+| Media collection resolution | PASS |
+| Public Gallery cold launch | PASS |
+| Secure Gallery authentication-surface launch | PASS |
+| Direct photo opening | PASS |
+| Warm viewer → picker handoff | PASS |
+| Multi-selection picker controls | PASS |
+| Android crash buffer after final smoke checks | EMPTY |
 
-## Runtime interaction checks
+## Model integrity
 
-- Public Gallery launched and displayed MediaStore-owned test media after the permission flow.
-- Long-press slide selection selected an inclusive seven-item range; reverse sliding removed a three-item range and left four selected.
-- Android presented the native favourite/trash approval path; the public recycle bin displayed the trashed item and exposed restore/permanent-delete actions.
-- Secure Gallery Argon2id six-digit PIN setup and unlock completed on the emulator.
-- A strong emulator fingerprint was enrolled. Biometric enrollment created the protected vault-key envelope, and a later biometric-only unlock returned to the encrypted gallery without entering the PIN.
-- Public video thumbnails and the Samsung-style public player were verified on the connected Pixel 8 Pro.
-- A generated 3-second H.264 video was selected through Android's document picker, encrypted, shown as a secure video tile, decrypted only into app-private cache for viewing, and played with a correct `0:03 / 0:03` duration.
-- Secure viewer moved the item to the encrypted recycle bin, where it appeared with restore, empty, and permanent-delete controls.
-- No `AndroidRuntime` crash was recorded during the interaction pass. `FLAG_SECURE` remains enabled for Secure Gallery.
+| Model | SHA-256 |
+|---|---|
+| Carve Big-LaMa FP32 ONNX | `1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6` |
+| MediaPipe Magic Touch interactive segmentation task | `38431bc66b883404e8397f74c3579404315b9b52b04a46c6346fe906a7309b03` |
 
-## APK verification
+CI verifies both digests before running the Version 1 test/lint/assembly gate.
 
-- Artifact: `artifacts\VaultGallery-2.1-Pixel-audited-debug.apk`
-- Size: 71,577,264 bytes
-- SHA-256: `7F2E9D95E0AE7E0C69DA1914BFE20E4562323A3454D5F50A46379F1B642F02CA`
-- APK Signature Scheme v2: verified
-- Signer: Android Debug certificate
-- Private reference check: all 708 APK entries scanned; no supplied screenshot names or reference-image paths found
+## Interpretation
 
-This is a debug-signed personal evaluation build. Read `KNOWN_LIMITATIONS.md` before using irreplaceable private media.
+These results demonstrate that the published source compiles, its JVM contract suite passes, its
+declared Android integration routes resolved on the physical Pixel, and the functionally identical
+pre-publication build opened both gallery entry surfaces without a recorded Android runtime crash.
+The exact relabeled Version 1 APK could not be reinstalled after the Pixel disconnected during the
+publication pass. These results are not a claim of
+formal security certification, accessibility certification, codec compatibility with every Android
+vendor, or production release signing.

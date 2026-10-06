@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Vault Gallery Version 1 — a local-first flagship Android gallery with a full Secure Gallery, real-time editing and deliberate media workflows.">
+  <meta name="theme-color" content="#05060a">
+  <title>Vault Gallery — Version 1</title>
+  <link rel="icon" href="assets/gallery-icon.png">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #05060a;
+      --panel: rgba(20, 23, 34, .78);
+      --panel-solid: #141722;
+      --soft: #202536;
+      --text: #f7f8fc;
+      --muted: #aeb5c8;
+      --line: rgba(255,255,255,.1);
+      --blue: #5575ff;
+      --cyan: #54d6ff;
+      --pink: #df3ecf;
+      --orange: #ff6838;
+      --green: #48db91;
+      --radius: 26px;
+      --shadow: 0 28px 80px rgba(0,0,0,.42);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(900px 520px at 12% -8%, rgba(85,117,255,.22), transparent 65%),
+        radial-gradient(760px 560px at 94% 10%, rgba(223,62,207,.18), transparent 62%),
+        var(--bg);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+    a { color: inherit; }
+    button, input { font: inherit; }
+    .skip { position: absolute; left: -9999px; }
+    .skip:focus { left: 16px; top: 16px; z-index: 20; background: white; color: black; padding: 12px 16px; border-radius: 12px; }
+    .shell { width: min(1180px, calc(100% - 36px)); margin: 0 auto; }
+    nav {
+      position: sticky; top: 0; z-index: 15;
+      backdrop-filter: blur(18px);
+      background: rgba(5,6,10,.72);
+      border-bottom: 1px solid var(--line);
+    }
+    .nav-inner { min-height: 72px; display: flex; align-items: center; gap: 18px; }
+    .brand { display: flex; align-items: center; gap: 11px; font-weight: 760; text-decoration: none; margin-right: auto; }
+    .brand img { width: 38px; height: 38px; border-radius: 12px; }
+    .nav-links { display: flex; gap: 18px; color: var(--muted); font-size: 14px; }
+    .nav-links a { text-decoration: none; }
+    .nav-links a:hover, .nav-links a:focus { color: white; }
+    .button {
+      display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+      min-height: 48px; padding: 0 20px; border-radius: 15px; border: 1px solid transparent;
+      text-decoration: none; font-weight: 720; transition: transform .18s ease, background .18s ease;
+    }
+    .button:hover { transform: translateY(-2px); }
+    .primary { background: linear-gradient(135deg, var(--blue), #7b55f6); box-shadow: 0 14px 40px rgba(85,117,255,.28); }
+    .secondary { border-color: var(--line); background: rgba(255,255,255,.045); }
+    .hero { min-height: 720px; display: grid; grid-template-columns: 1.08fr .92fr; align-items: center; gap: 64px; padding: 86px 0 64px; }
+    .eyebrow { color: #c7d0ff; text-transform: uppercase; letter-spacing: .16em; font-size: 12px; font-weight: 800; }
+    h1 { font-size: clamp(48px, 7vw, 88px); line-height: .98; letter-spacing: -.055em; margin: 18px 0 24px; }
+    .gradient { background: linear-gradient(105deg, #fff 14%, #b7c4ff 52%, #ff9ac7); -webkit-background-clip: text; color: transparent; }
+    .lead { max-width: 680px; color: var(--muted); font-size: clamp(18px, 2vw, 22px); }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 34px 0; }
+    .meta { display: flex; flex-wrap: wrap; gap: 12px 22px; color: var(--muted); font-size: 14px; }
+    .meta span::before { content: "●"; color: var(--green); margin-right: 8px; }
+    .phone-wrap { position: relative; display: grid; place-items: center; }
+    .orb { position: absolute; width: 460px; height: 460px; border-radius: 50%; background: conic-gradient(from 30deg, rgba(85,117,255,.28), rgba(223,62,207,.22), rgba(255,104,56,.22), rgba(85,117,255,.28)); filter: blur(28px); }
+    .phone { position: relative; width: min(365px, 84vw); aspect-ratio: 9/19.5; padding: 12px; border-radius: 54px; background: linear-gradient(145deg, #3d4252, #10131b 45%, #3b4050); box-shadow: var(--shadow); }
+    .screen { height: 100%; overflow: hidden; border-radius: 44px; background: #000; display: flex; flex-direction: column; }
+    .status { display: flex; justify-content: space-between; padding: 17px 24px 8px; font-size: 12px; font-weight: 700; }
+    .gallery-top { display: flex; justify-content: flex-end; gap: 14px; padding: 24px 20px 18px; color: #e9eaf1; font-size: 22px; }
+    .date { padding: 4px 18px 12px; font-size: 17px; font-weight: 700; }
+    .mock-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; padding: 0 8px; flex: 1; align-content: start; }
+    .tile { aspect-ratio: 1; border-radius: 5px; background: linear-gradient(135deg, #283251, #70456e); position: relative; overflow: hidden; }
+    .tile:nth-child(3n+2) { background: linear-gradient(135deg, #594338, #b47a62); }
+    .tile:nth-child(4n+1) { background: linear-gradient(135deg, #1d4a44, #4b8d73); }
+    .tile:nth-child(5n) { background: linear-gradient(135deg, #4b3154, #c44376); }
+    .tile.video::after { content: "▶ 0:18"; position: absolute; left: 6px; bottom: 4px; font-size: 8px; font-weight: 800; }
+    .bottom { height: 72px; display: grid; grid-template-columns: repeat(4,1fr); border-top: 1px solid #222; align-items: center; text-align: center; font-size: 10px; color: #9295a0; }
+    .bottom b { color: white; display: block; font-size: 16px; line-height: 1.2; }
+    section { padding: 88px 0; }
+    .section-kicker { color: #a8b6ff; text-transform: uppercase; letter-spacing: .14em; font-weight: 800; font-size: 12px; }
+    h2 { margin: 12px 0 16px; font-size: clamp(34px, 5vw, 56px); line-height: 1.05; letter-spacing: -.04em; }
+    .section-intro { color: var(--muted); font-size: 18px; max-width: 760px; }
+    .stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; margin-top: 38px; }
+    .stat { border: 1px solid var(--line); background: var(--panel); border-radius: 22px; padding: 24px; }
+    .stat strong { display: block; font-size: 34px; letter-spacing: -.04em; }
+    .stat span { color: var(--muted); font-size: 13px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin: 32px 0 20px; }
+    .chip { color: var(--muted); border: 1px solid var(--line); background: transparent; padding: 10px 14px; border-radius: 999px; cursor: pointer; }
+    .chip.active { color: white; background: var(--soft); border-color: rgba(130,150,255,.5); }
+    .search { flex: 1; min-width: 230px; background: var(--panel); color: white; border: 1px solid var(--line); border-radius: 999px; padding: 10px 18px; outline: none; }
+    .search:focus { border-color: var(--blue); box-shadow: 0 0 0 4px rgba(85,117,255,.15); }
+    .cards { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }
+    .card { border: 1px solid var(--line); background: linear-gradient(155deg, rgba(34,38,55,.9), rgba(15,17,25,.86)); border-radius: var(--radius); padding: 24px; min-height: 230px; transition: border .18s ease, transform .18s ease; }
+    .card:hover { border-color: rgba(130,150,255,.48); transform: translateY(-3px); }
+    .card[hidden] { display: none; }
+    .icon { width: 44px; height: 44px; display: grid; place-items: center; background: rgba(85,117,255,.14); border: 1px solid rgba(110,135,255,.28); border-radius: 14px; font-size: 20px; }
+    .card h3 { margin: 20px 0 8px; font-size: 20px; }
+    .card p { color: var(--muted); margin: 0; font-size: 14px; }
+    .card small { display: inline-block; margin-top: 18px; color: #bdc7ff; }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: stretch; margin-top: 38px; }
+    .feature-panel { padding: 32px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line); }
+    .feature-panel.secure { background: linear-gradient(145deg, rgba(41,55,143,.38), rgba(20,23,34,.88)); }
+    .feature-panel img { width: 72px; border-radius: 20px; }
+    .feature-panel h3 { font-size: 26px; margin: 18px 0 8px; }
+    .feature-panel ul { color: var(--muted); padding-left: 20px; }
+    .flow { margin-top: 34px; display: grid; grid-template-columns: repeat(5,1fr); gap: 10px; }
+    .flow div { position: relative; min-height: 116px; padding: 18px; border-radius: 18px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+    .flow strong { color: white; display: block; margin-bottom: 6px; }
+    .flow div:not(:last-child)::after { content: "→"; position: absolute; right: -10px; top: 44px; z-index: 2; color: #9dadff; }
+    .tabs { margin-top: 36px; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--panel); }
+    .tab-list { display: flex; overflow-x: auto; border-bottom: 1px solid var(--line); }
+    .tab { color: var(--muted); border: 0; background: transparent; padding: 16px 20px; cursor: pointer; white-space: nowrap; }
+    .tab[aria-selected="true"] { color: white; background: var(--soft); box-shadow: inset 0 -2px var(--blue); }
+    .tab-panel { padding: 30px; }
+    .tab-panel[hidden] { display: none; }
+    pre { overflow-x: auto; padding: 20px; border-radius: 18px; background: #090b11; border: 1px solid var(--line); color: #dbe3ff; }
+    code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .notice { margin-top: 30px; padding: 20px 22px; border-radius: 18px; border: 1px solid rgba(255,190,90,.35); background: rgba(255,154,54,.08); color: #f6d3af; }
+    footer { padding: 50px 0 70px; border-top: 1px solid var(--line); color: var(--muted); }
+    .footer-grid { display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 30px; }
+    footer a { display: block; color: var(--muted); text-decoration: none; margin: 8px 0; }
+    footer a:hover { color: white; }
+    @media (max-width: 900px) {
+      .nav-links { display: none; }
+      .hero { grid-template-columns: 1fr; text-align: center; padding-top: 64px; }
+      .lead { margin-inline: auto; }
+      .actions, .meta { justify-content: center; }
+      .phone-wrap { margin-top: 28px; }
+      .stats, .cards { grid-template-columns: repeat(2,1fr); }
+      .flow { grid-template-columns: 1fr; }
+      .flow div:not(:last-child)::after { content: "↓"; right: 50%; top: auto; bottom: -16px; }
+    }
+    @media (max-width: 620px) {
+      .shell { width: min(100% - 24px, 1180px); }
+      .nav-inner .button { display: none; }
+      .stats, .cards, .split, .footer-grid { grid-template-columns: 1fr; }
+      section { padding: 66px 0; }
+      .hero { min-height: auto; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <nav aria-label="Primary navigation">
+    <div class="shell nav-inner">
+      <a class="brand" href="#top"><img src="assets/gallery-icon.png" alt=""> Vault Gallery</a>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#secure">Secure</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#build">Build</a>
+      </div>
+      <a class="button primary" href="https://github.com/danyalwg/VaultGallery/releases/tag/v1.0.0">Download Version 1</a>
+    </div>
+  </nav>
+
+  <main id="main">
+    <header id="top" class="shell hero">
+      <div>
+        <div class="eyebrow">Local-first · Flagship-focused · Android</div>
+        <h1><span class="gradient">Your gallery should feel effortless.</span></h1>
+        <p class="lead">Vault Gallery combines a deliberate everyday media experience, real-time editing, durable transfers, on-device intelligence and a complete private gallery in one coherent Version 1 product.</p>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/danyalwg/VaultGallery/releases/tag/v1.0.0">Get the APK</a>
+          <a class="button secondary" href="https://github.com/danyalwg/VaultGallery">Browse source</a>
+          <a class="button secondary" href="https://github.com/danyalwg/VaultGallery/blob/main/README.md">Read the full guide</a>
+        </div>
+        <div class="meta"><span>Android 10+</span><span>ARM64</span><span>On-device processing</span><span>One public release</span></div>
+      </div>
+      <div class="phone-wrap" aria-label="Stylized Vault Gallery pictures timeline">
+        <div class="orb"></div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status"><span>11:02</span><span>● ● 95%</span></div>
+            <div class="gallery-top"><span>▢</span><span>⌕</span><span>⋮</span></div>
+            <div class="date">Today</div>
+            <div class="mock-grid">
+              <div class="tile"></div><div class="tile video"></div><div class="tile"></div><div class="tile"></div>
+              <div class="tile video"></div><div class="tile"></div><div class="tile"></div><div class="tile video"></div>
+              <div class="tile"></div><div class="tile"></div><div class="tile video"></div><div class="tile"></div>
+              <div class="tile"></div><div class="tile video"></div><div class="tile"></div><div class="tile"></div>
+              <div class="tile"></div><div class="tile"></div><div class="tile"></div><div class="tile video"></div>
+            </div>
+            <div class="bottom"><span><b>▧</b>Pictures</span><span><b>▣</b>Albums</span><span><b>▱</b>Stories</span><span><b>☰</b>Menu</span></div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <section>
+      <div class="shell">
+        <div class="section-kicker">Version 1 in numbers</div>
+        <h2>A consolidated product, not a demo shell.</h2>
+        <p class="section-intro">The public release brings the working gallery, Secure Gallery, editors, creation tools, local AI boundary, durable transfer engine and Android integration into one build.</p>
+        <div class="stats">
+          <div class="stat"><strong>3–12</strong><span>anchored grid columns</span></div>
+          <div class="stat"><strong>73</strong><span>passing JVM tests</span></div>
+          <div class="stat"><strong>0</strong><span>lint errors in the release gate</span></div>
+          <div class="stat"><strong>100%</strong><span>local-first core processing</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="features">
+      <div class="shell">
+        <div class="section-kicker">Interactive capability map</div>
+        <h2>Find the part of the gallery you care about.</h2>
+        <p class="section-intro">Filter by product area or search for a capability. Every card links back to the source repository and complete technical guide.</p>
+        <div class="toolbar" aria-label="Feature filters">
+          <button class="chip active" data-filter="all">Everything</button>
+          <button class="chip" data-filter="gallery">Gallery</button>
+          <button class="chip" data-filter="editor">Editing</button>
+          <button class="chip" data-filter="secure">Secure</button>
+          <button class="chip" data-filter="system">System</button>
+          <input class="search" id="feature-search" type="search" placeholder="Search features…" aria-label="Search features">
+        </div>
+        <div class="cards" id="feature-cards">
+          <article class="card" data-category="gallery" data-search="timeline grid pinch zoom dates media pictures"><div class="icon">▦</div><h3>Adaptive timeline</h3><p>Date sections, 3–12 columns, continuous anchored pinch reflow and remembered density.</p><small>Gallery</small></article>
+          <article class="card" data-category="gallery" data-search="gesture swipe paging zoom info filmstrip viewer"><div class="icon">↔</div><h3>Direct manipulation</h3><p>Finger-following paging, pinch zoom, swipe-up details and a centre-anchored filmstrip.</p><small>Viewer</small></article>
+          <article class="card" data-category="gallery" data-search="video seek realtime scrub playback mute snapshot frames"><div class="icon">▶</div><h3>Real-time video</h3><p>Playback-preserving scrubbing, display-frame progress, clear media identity and external playback.</p><small>Video</small></article>
+          <article class="card" data-category="editor" data-search="photo crop perspective rotate tone curve lut drawing vector"><div class="icon">✦</div><h3>Deep photo editing</h3><p>Geometry, tone, curves, LUTs, local masks, lens correction, drawing and vector layers.</p><small>Editor</small></article>
+          <article class="card" data-category="editor" data-search="video editor trim crop speed mute subtitle export"><div class="icon">◫</div><h3>Video workspace</h3><p>Trim, precise playhead, crop, rotation, speed, mute, looks, subtitles and cancellable export.</p><small>Editor</small></article>
+          <article class="card" data-category="editor" data-search="ai object erase content aware fill segmentation person background lama"><div class="icon">◎</div><h3>Local AI studio</h3><p>Editable masks, object/person/background selection and local Big-LaMa reconstruction.</p><small>On device</small></article>
+          <article class="card" data-category="editor" data-search="document scan ocr text corners loupe perspective"><div class="icon">T</div><h3>Documents and OCR</h3><p>Copyable on-device text, corner detection, movable quadrilateral, loupe and cleanup tones.</p><small>Documents</small></article>
+          <article class="card" data-category="gallery editor" data-search="collage gif movie slideshow create layout audio"><div class="icon">＋</div><h3>Create studio</h3><p>Configurable collage, GIF, mixed-media movie, slideshow and album creation workflows.</p><small>Create</small></article>
+          <article class="card" data-category="secure" data-search="pin biometric fingerprint authentication secure gallery"><div class="icon">⌁</div><h3>Authentication</h3><p>Four-digit auto-submit PIN, Android biometrics, Keystore protection and deliberate locking.</p><small>Secure Gallery</small></article>
+          <article class="card" data-category="secure" data-search="encrypted locked only vault mode external apps player"><div class="icon">▣</div><h3>Two storage modes</h3><p>Encrypted confidentiality or locked-only compatibility with explicitly approved apps.</p><small>Secure Gallery</small></article>
+          <article class="card" data-category="secure system" data-search="transfer copy move background workmanager progress pause cancel retry"><div class="icon">⇄</div><h3>Durable transfers</h3><p>Verified copy/move/import/export with foreground progress, pause, resume, cancel and retry.</p><small>Data safety</small></article>
+          <article class="card" data-category="gallery" data-search="whatsapp business chat contact conversation organize backup"><div class="icon">◉</div><h3>Conversation organization</h3><p>Optional virtual chat grouping for WhatsApp and Business without moving owned media files.</p><small>Organization</small></article>
+          <article class="card" data-category="gallery" data-search="search smart album ocr duplicate burst visual similarity vector"><div class="icon">⌕</div><h3>Local intelligence</h3><p>Smart albums, OCR index, duplicate review, burst recommendations and visual similarity.</p><small>Search</small></article>
+          <article class="card" data-category="system" data-search="default gallery open with android view edit review picker"><div class="icon">◇</div><h3>Android integration</h3><p>Gallery, viewer, editor, camera review, collection and legacy picker contracts.</p><small>System</small></article>
+          <article class="card" data-category="system" data-search="font size bold display rtl language animations accessibility"><div class="icon">Aa</div><h3>System-aware UI</h3><p>System typeface, font scale, bold adjustment, display scale, locale, RTL and motion settings.</p><small>Accessibility</small></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="secure">
+      <div class="shell">
+        <div class="section-kicker">One gallery model</div>
+        <h2>Public and private, without learning two apps.</h2>
+        <p class="section-intro">Secure Gallery carries the same browsing and editing concepts behind an authentication boundary, then adds storage, access and locking controls.</p>
+        <div class="split">
+          <div class="feature-panel">
+            <img src="assets/gallery-icon.png" alt="">
+            <h3>Public Gallery</h3>
+            <ul><li>MediaStore-backed library</li><li>Android-approved mutations</li><li>Albums, timeline, stories and search</li><li>Full viewer, editor and create surfaces</li><li>Default viewer and picker contracts</li></ul>
+          </div>
+          <div class="feature-panel secure">
+            <img src="assets/secure-icon.png" alt="">
+            <h3>Secure Gallery</h3>
+            <ul><li>PIN and biometric authentication</li><li>Encrypted or locked-only storage</li><li>Matching album, viewer and editor concepts</li><li>Controlled external-app access</li><li>Persistent payload and recovery boundaries</li></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="section-kicker">Move means move</div>
+        <h2>A transfer has an invariant, not a hopeful animation.</h2>
+        <p class="section-intro">The source survives until the destination is written, flushed, verified and committed. Long operations continue in the background and remain controllable.</p>
+        <div class="flow" aria-label="Transfer safety flow">
+          <div><strong>1. Stage</strong>Write a temporary destination with source context.</div>
+          <div><strong>2. Verify</strong>Flush bytes and validate the destination.</div>
+          <div><strong>3. Commit</strong>Write metadata and make the item visible.</div>
+          <div><strong>4. Approve</strong>Request Android mutation approval when required.</div>
+          <div><strong>5. Finish</strong>Delete the source only for a verified move.</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="architecture">
+      <div class="shell">
+        <div class="section-kicker">Under the product</div>
+        <h2>Explore the architecture.</h2>
+        <p class="section-intro">The app is split by durable product responsibility, with one Android shell wiring public and secure experiences to shared domains.</p>
+        <div class="tabs">
+          <div class="tab-list" role="tablist" aria-label="Architecture topics">
+            <button class="tab" role="tab" aria-selected="true" aria-controls="tab-modules" id="modules">Modules</button>
+            <button class="tab" role="tab" aria-selected="false" aria-controls="tab-security" id="security">Security</button>
+            <button class="tab" role="tab" aria-selected="false" aria-controls="tab-ai" id="ai">AI boundary</button>
+            <button class="tab" role="tab" aria-selected="false" aria-controls="tab-android" id="android">Android</button>
+          </div>
+          <div class="tab-panel" id="tab-modules" role="tabpanel" aria-labelledby="modules">
+            <h3>Feature-oriented Gradle modules</h3><p>The application shell integrates design-system, database, security, gallery, viewer, editor, creation, transfer, search and AI boundaries. Mature implementations still being extracted remain in the app module to preserve tested behavior.</p>
+          </div>
+          <div class="tab-panel" id="tab-security" role="tabpanel" aria-labelledby="security" hidden>
+            <h3>Application-level protection</h3><p>Keystore wrapping, Argon2-derived credentials, authenticated encryption, bounded URI grants and lifecycle locking protect the vault within the documented threat model. Vault Gallery does not claim to be an operating-system secure container.</p>
+          </div>
+          <div class="tab-panel" id="tab-ai" role="tabpanel" aria-labelledby="ai" hidden>
+            <h3>Replaceable local runtimes</h3><p>Selection, OCR, similarity and inpainting sit behind explicit local backends. Model identity and checksums are versioned. Neural output is separated from deterministic processing and never described as a cloud feature when it is not one.</p>
+          </div>
+          <div class="tab-panel" id="tab-android" role="tabpanel" aria-labelledby="android" hidden>
+            <h3>Platform contracts first</h3><p>MediaStore owns public media identity, system prompts own dangerous mutations and biometrics, WorkManager owns durable operations, and intent filters expose only supported viewer/editor/review/picker capabilities.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="build">
+      <div class="shell">
+        <div class="section-kicker">Build and verify</div>
+        <h2>One command for the local gate.</h2>
+        <p class="section-intro">Clone with Git LFS, use JDK 17 and Android SDK 35, then run the same unit-test, lint and assembly gate recorded for Version 1.</p>
+        <pre><code>git lfs install
+git clone https://github.com/danyalwg/VaultGallery.git
+cd VaultGallery
+git lfs pull
+./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug</code></pre>
+        <div class="notice"><strong>Signing boundary:</strong> the GitHub APK is a debug-signed evaluation artifact. Production release signing credentials are deliberately not stored in this repository.</div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell footer-grid">
+      <div><a class="brand" href="#top"><img src="assets/gallery-icon.png" alt=""> Vault Gallery</a><p>Version 1. Local-first media, deliberate interaction, and a private gallery that still feels like a gallery.</p></div>
+      <div><strong>Product</strong><a href="https://github.com/danyalwg/VaultGallery/releases/tag/v1.0.0">Download</a><a href="https://github.com/danyalwg/VaultGallery/blob/main/README.md">Full guide</a><a href="https://github.com/danyalwg/VaultGallery/blob/main/KNOWN_LIMITATIONS.md">Limitations</a></div>
+      <div><strong>Engineering</strong><a href="https://github.com/danyalwg/VaultGallery">Source</a><a href="https://github.com/danyalwg/VaultGallery/blob/main/ARCHITECTURE.md">Architecture</a><a href="https://github.com/danyalwg/VaultGallery/blob/main/SECURITY.md">Security</a></div>
+    </div>
+  </footer>
+
+  <script>
+    const chips = [...document.querySelectorAll('.chip')];
+    const cards = [...document.querySelectorAll('.card')];
+    const search = document.querySelector('#feature-search');
+    let category = 'all';
+    function updateCards() {
+      const query = search.value.trim().toLowerCase();
+      for (const card of cards) {
+        const categoryMatch = category === 'all' || card.dataset.category.split(' ').includes(category);
+        const queryMatch = !query || `${card.innerText} ${card.dataset.search}`.toLowerCase().includes(query);
+        card.hidden = !(categoryMatch && queryMatch);
+      }
+    }
+    for (const chip of chips) chip.addEventListener('click', () => {
+      category = chip.dataset.filter;
+      chips.forEach(item => item.classList.toggle('active', item === chip));
+      updateCards();
+    });
+    search.addEventListener('input', updateCards);
+
+    const tabs = [...document.querySelectorAll('[role="tab"]')];
+    const panels = [...document.querySelectorAll('[role="tabpanel"]')];
+    for (const tab of tabs) tab.addEventListener('click', () => {
+      tabs.forEach(item => item.setAttribute('aria-selected', String(item === tab)));
+      panels.forEach(panel => { panel.hidden = panel.id !== tab.getAttribute('aria-controls'); });
+    });
+  </script>
+</body>
+</html>

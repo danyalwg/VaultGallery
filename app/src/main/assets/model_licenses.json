@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "models": [
+    {
+      "id": "carve-big-lama-fp32-onnx",
+      "feature": "Neural content-aware fill and object removal",
+      "file": "lama_fp32.onnx",
+      "sha256": "1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6",
+      "source": "https://huggingface.co/Carve/LaMa-ONNX/blob/c3c0c9e468934d62e79c329e35d82dd09ff8c444/lama_fp32.onnx",
+      "upstream": "https://github.com/advimman/lama",
+      "runtime_code_license": "MIT (ONNX Runtime)",
+      "weights_license": "Apache-2.0",
+      "distribution_status": "BUNDLED",
+      "notes": "Fixed 512x512 FP32 ONNX port of Big-LaMa; processing is fully on-device."
+    },
+    {
+      "id": "mediapipe-magic-touch-int8-v1",
+      "feature": "Interactive object selection",
+      "file": "interactive_segmentation.task",
+      "sha256": "38431bc66b883404e8397f74c3579404315b9b52b04a46c6346fe906a7309b03",
+      "source": "https://storage.googleapis.com/mediapipe-models/interactive_segmenter_v2/magic_touch/int8/1/interactive_segmentation.task",
+      "runtime_code_license": "Apache-2.0",
+      "weights_license": "NOT_EXPLICITLY_VERIFIED",
+      "distribution_status": "REVIEW_REQUIRED",
+      "notes": "The MediaPipe source/runtime is Apache-2.0, but that alone does not prove the separately downloaded model weights use the same licence. Do not claim commercial clearance until an authoritative weight licence is archived."
+    },
+    {
+      "id": "mlkit-selfie-segmentation",
+      "feature": "Person and background masks",
+      "delivery": "Google Play services / ML Kit dependency",
+      "terms": "https://developers.google.com/ml-kit/terms",
+      "weights_license": "ML_KIT_TERMS",
+      "distribution_status": "TERMS_REVIEW_REQUIRED"
+    },
+    {
+      "id": "mlkit-text-recognition-latin",
+      "feature": "On-device OCR",
+      "delivery": "Bundled ML Kit dependency",
+      "terms": "https://developers.google.com/ml-kit/terms",
+      "weights_license": "ML_KIT_TERMS",
+      "distribution_status": "TERMS_REVIEW_REQUIRED"
+    }
+  ]
+}

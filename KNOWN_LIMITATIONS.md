@@ -1,30 +1,103 @@
-# Known Limitations
+# Known limitations — Vault Gallery Version 1
 
-Vault Gallery 2.1 is a substantial personal-use debug build, not a Play Store production release.
+This document is intentionally direct. A gallery handles irreplaceable data; limitations must be
+easier to find than marketing claims.
 
-## Implemented
+## Distribution and signing
 
-- Two distinct Gallery and Secure Gallery experiences, with an optional hideable Secure Gallery launcher icon.
-- Public MediaStore permission flow, date timeline, configurable 3/4/5-column grids, albums, search, zoom, Media3 video playback, external-player routing, local monthly stories, and responsive dark UI.
-- Samsung-style long-press slide selection across the timeline and album grids, including inclusive range add/remove and edge auto-scroll.
-- Android system favourites and recycle-bin operations: add/remove favourites, move to trash, browse trash, restore, empty, and permanently delete through platform approval dialogs.
-- Sharing, copy-to-Secure-Gallery, image/video viewing, and deliberate confirmation for destructive viewer actions.
-- Secure PIN/passphrase setup, Argon2id, persisted increasing unlock delays, credential changes, configurable background auto-lock, and real Android biometric unlock.
-- A random vault master key wrapped independently by passphrase and a biometric-authenticated Android Keystore key; biometric enrollment changes invalidate the biometric key.
-- Per-object derived keys, AES-256-GCM chunk encryption, encrypted metadata, SAF imports, encrypted image viewing, app-private temporary Media3 video playback, and explicit decrypted sharing.
-- Encrypted 30-day Secure Gallery recycle bin with restore, empty, and permanent-delete controls; screenshot protection and disabled Android backup.
+- Version 1 is an ARM64-only flagship-phone evaluation build.
+- The GitHub APK is signed with an Android debug certificate, not a protected production release
+  key.
+- Debug-signed builds are unsuitable for a store release or a long-lived production update chain.
+- The source release does not contain signing credentials.
+- Keep an independent backup of irreplaceable media.
 
-## Not yet implemented
+## Android default-app boundary
 
-- Recovery keys, encrypted device-to-device backup/migration, durable WorkManager import queues, resumable large imports, folder-tree imports, duplicate detection, or transactional deletion of the public source after a secure copy.
-- Persistent encrypted thumbnail caches; secure image/video thumbnails are derived on demand while the vault is unlocked.
-- Full location-map metadata, network-backed shared albums, people/face grouping, OCR, semantic labels, cloud sync, and Samsung's proprietary Galaxy AI services.
-- Built-in pixel-level photo/video editing and final GIF/collage/movie rendering; the current build routes media to compatible Android editors and providers where possible.
-- Samsung account/network features, vendor-specific motion-photo playback, RAW workflows, Chromecast, or cross-device continuity.
-- Full tablet/foldable layouts, performance benchmarks for extremely large libraries, release signing, store packaging, accessibility certification, and a complete physical-device matrix.
+Vault Gallery advertises Android’s standard gallery, image/video viewer, editor, camera-review,
+collection and legacy picker contracts. Android intentionally keeps the final default-app decision
+with the device owner, so an ordinary third-party app cannot silently become the default photo/video
+handler on every phone. OEM camera and file-manager applications may use embedded/private viewers
+that never consult the public resolver.
 
-## Security boundary
+Android also has no device-wide media-sort preference. Vault Gallery follows real system
+configuration—typeface, font scale, bold adjustment, display scale, locale, RTL and animation
+scale—while remembering gallery sort and grid choices per relevant surface.
 
-Secure Gallery is application-level encrypted storage, not an operating-system container. Rooted or compromised devices, privileged memory inspection, malicious accessibility services, OS/vendor capture defects, and physical cameras remain outside its reliable boundary. Shared plaintext can be retained by recipients. Flash wear leveling prevents guaranteed forensic overwrite.
+## Secure Gallery boundary
 
-The APK is debug-signed but has no visual debug watermark. It is suitable for evaluation and careful personal testing, but irreplaceable private media should remain backed up until migration, recovery, and physical-device testing are completed.
+- Secure Gallery is application-level protection, not an Android operating-system container.
+- Rooted or compromised devices, malicious privileged services, memory capture while unlocked and
+  recipient retention of deliberately shared plaintext are outside its protection boundary.
+- Locked-only mode is protected by app authentication, private navigation, `.nomedia` and controlled
+  provider access; it is not encrypted at rest.
+- Encrypted mode improves confidentiality but must create authenticated plaintext for approved
+  viewing/sharing/export flows.
+- No software can promise forensic erasure from flash storage after deletion.
+- Uninstall is designed not to remove the persistent vault payload, but it does remove app-private
+  preferences and can complicate recovery. Preserve recovery material and a separate backup.
+
+## Neural and AI-assisted tools
+
+- Big-LaMa content-aware fill is a fixed 512×512 local inpainting model, not a prompt-driven cloud
+  generator.
+- Large removals, repeated structures, text, faces at a mask edge and selections without enough
+  surrounding context can produce visible artifacts.
+- First use includes model initialization.
+- Interactive selection depends on the quality of the source and may require Add/Subtract/Lasso
+  refinement.
+- Real-ESRGAN, NAFNet, MODNet, Whisper and face-restoration weights are not bundled or claimed as
+  working.
+- MediaPipe/ML Kit model terms require separate review from their runtime code licences; see model
+  metadata and third-party notices.
+
+## Real-time interaction boundary
+
+Direct manipulation uses live GPU or bounded preview surfaces. Full-resolution encoding, large-model
+inference and destructive output generation still happen after Apply/Save. A responsive preview does
+not make full-resolution work instantaneous. When an algorithm cannot incrementally infer, the UI
+keeps the latest valid preview rather than blocking the interaction surface.
+
+## Media and hardware
+
+- Very large libraries and very high-resolution edits still require broader stress testing.
+- Uncommon image/video codecs remain dependent on Android vendor codecs.
+- The editor avoids unnecessary full-resolution history, but a single 50 MP ARGB working frame can
+  require roughly 200 MB before additional processing buffers.
+- Some output codecs are available only when the device advertises them.
+- Movie background audio must be acceptable to Android’s MP4 muxer; unsupported source audio is
+  rejected rather than silently producing a corrupt movie.
+- Tablet, foldable, desktop-mode, low-memory and broad OEM matrices are not yet certified.
+
+## WhatsApp organization
+
+Conversation-oriented organization requires a compatible local WhatsApp/WhatsApp Business backup
+and the user-supplied 64-character key. Backups and schemas can change. When matching is unavailable,
+the app preserves and displays WhatsApp’s normal folders rather than physically rearranging files.
+
+## Architecture and editing
+
+- Feature modules exist, but some mature implementations remain in the app module while extraction
+  continues.
+- The internal vector workspace is functional, while some legacy drawing/text/sticker paths still
+  use the older compositor.
+- Whole-vault backup/restore and recovery paths require continued device testing before being trusted
+  as the only copy of real data.
+- No cloud synchronization or shared cloud album service is included.
+- Proprietary OEM account services, vendor AI models, private motion-photo internals and privileged
+  framework integrations cannot be reproduced through public Android APIs.
+
+## Accessibility and release engineering
+
+- System font/display/motion configuration is integrated, but formal accessibility certification is
+  not complete.
+- Broad TalkBack, switch-access, magnification, RTL and extreme font-scale matrices require more
+  device coverage.
+- Reproducible production release signing, Play policy review, privacy-policy hosting, store listing,
+  support operations and a complete security review remain release-engineering work.
+
+## Data-safety rule
+
+Do not rely on Version 1 as the only copy of irreplaceable media. Test copy, move, recovery, export
+and restore workflows with disposable files on the exact target device before trusting them with the
+only original.

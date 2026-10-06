@@ -20,4 +20,7 @@ Public deletion follows Android system approval and MediaStore trash behavior. S
 
 ## User controls
 
-The app will expose permission scope, analysis toggles, derived-data deletion, location removal, crash/analytics consent, trash retention, temporary cleanup, launcher visibility, encrypted backup status, and complete vault reset. A published privacy policy must match the shipped build and identify any future third-party processors before activation.
+The app exposes Android media permission scope, analysis-related controls, trash and temporary-data
+workflows, Secure Gallery storage/authentication settings, launcher visibility and vault recovery/
+reset surfaces where implemented. Any future network processor or telemetry system must be documented
+and consented before activation; it cannot be inferred from the existing network permission.

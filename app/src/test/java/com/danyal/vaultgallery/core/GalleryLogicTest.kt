@@ -43,4 +43,9 @@ class GalleryLogicTest {
         val ids = listOf(1L, 2L, 3L, 4L, 5L)
         assertEquals(setOf(1L, 5L, 99L), GalleryLogic.slideSelection(ids, ids.toSet() + 99L, 2L, 4L, false))
     }
+
+    @Test fun slideSelectionAlsoSupportsSecureStringIds() {
+        val ids = listOf("encrypted-a", "encrypted-b", "encrypted-c", "encrypted-d")
+        assertEquals(setOf("encrypted-b", "encrypted-c", "encrypted-d"), GalleryLogic.slideSelection(ids, emptySet(), "encrypted-d", "encrypted-b", true))
+    }
 }
